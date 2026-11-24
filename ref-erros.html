@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cola de erros do PostgreSQL — códigos SQLSTATE (23505, 23503, 42P01, 42601…) | Guia PostgreSQL</title>
+<meta name="description" content="Cola de consulta rápida dos erros mais comuns do PostgreSQL com o código SQLSTATE: 42P01 relation does not exist, 42703 column does not exist, 42601 syntax error, 23505 duplicate key (unique), 23503 foreign key, 23502 null value, 22P02 invalid input syntax, 22001 valor longo demais, 08006 connection failure, 28P01 password authentication failed, 3D000 database does not exist, 40P01 deadlock, 55P03 lock. Tabela código → mensagem real → causa → solução, com missões para provocar os erros no psql simulado.">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<script>try{history.scrollRestoration="manual"}catch(e){}function z(){window.scrollTo(0,0);document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0}window.addEventListener("DOMContentLoaded",z);window.addEventListener("load",z);window.addEventListener("pageshow",z);window.addEventListener("pagehide",function(){window.scrollTo(0,0);document.documentElement.scrollTop=0;});document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a){var h=a.getAttribute("href")||"";if(/[.]html($|[?#])/.test(h)&&a.host===location.host){window.scrollTo(0,0);document.documentElement.scrollTop=0;}}});</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Cola de <span class="hl">erros</span> — código SQLSTATE → causa → solução</h1>
+
+<p class="intro">O PostgreSQL fala em códigos: toda mensagem de erro traz um <strong>SQLSTATE</strong> de 5 caracteres (ex.: <code>23505</code>). Aprenda a ler a mensagem que o servidor já diz <em>o quê</em> e <em>onde</em> — e esta cola diz <em>por quê</em> e <em>como consertar</em>. Dá para provocar os quatro primeiros no psql simulado abaixo.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A anatomia da mensagem: <code>ERROR: …</code> + <code>DETAIL</code> + <code>LINE 1: … ^</code> apontando a coluna do erro.</li>
+  <li>Os códigos de classe 42 (sintaxe/tabela), 23 (integridade), 22 (valor inválido), 08/28/3D (conexão) e 40/55 (lock).</li>
+  <li>Que no psql dá para ver o código com <code>\errverbose</code> após um erro.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Anatomia da mensagem de erro</h2>
+<dl class="anatomy">
+  <dt>ERROR:</dt><dd>a classe do problema em texto</dd>
+  <dt>relation "x" does not exist</dt><dd>a explicação: o que não foi encontrado</dd>
+  <dt>LINE 1: SELECT * FROM x;</dt><dd>o trecho do comando que causou o erro</dd>
+  <dt>^</dt><dd>a setinha marca a coluna exata onde o servidor parou</dd>
+</dl>
+<pre class="term">loja_aurora=&gt; SELECT * FROM tabela_fantasma;
+ERROR:  relation "tabela_fantasma" does not exist
+LINE 1: SELECT * FROM tabela_fantasma;
+                      ^</pre>
+
+<hr>
+
+<h2>A tabela dos erros mais comuns</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>SQLSTATE</th><th>Mensagem típica</th><th>Causa</th><th>Solução</th></tr>
+<tr><td><strong>42P01</strong></td><td><code>ERROR: relation "x" does not exist</code></td><td>Tabela não existe (nome errado, maiúsculas sem aspas, ou banco errado).</td><td><code>\dt</code> para listar; confira o banco com <code>SELECT current_database();</code>; nomes com maiúscula precisam de aspas: <code>"Clientes"</code>.</td></tr>
+<tr><td><strong>42703</strong></td><td><code>ERROR: column "x" does not exist</code></td><td>Coluna não existe naquela tabela (erro de digitação).</td><td><code>\d tabela</code> para ver as colunas; o próprio erro às vezes sugere: <code>HINT: Perhaps you meant…</code></td></tr>
+<tr><td><strong>42601</strong></td><td><code>ERROR: syntax error at or near "…"</code></td><td>Comando mal formado (vírgula sobrando, palavra reservada errada, <code>FROM</code> faltando).</td><td>A <code>LINE 1: … ^</code> mostra onde parou. Revise vírgulas e a ordem: <code>SELECT … FROM … WHERE …</code>.</td></tr>
+<tr><td><strong>23505</strong></td><td><code>ERROR: duplicate key value violates unique constraint "t_col_key"</code> + <code>DETAIL: Key (col)=(valor) already exists.</code></td><td>Valor repetido em coluna <code>UNIQUE</code> ou <code>PRIMARY KEY</code>.</td><td>Use outro valor, ou faça <code>UPDATE</code> na linha existente, ou <code>INSERT … ON CONFLICT (col) DO UPDATE</code> (upsert).</td></tr>
+<tr><td><strong>23503</strong></td><td><code>ERROR: insert or update on table "t" violates foreign key constraint "t_col_fkey"</code></td><td>Referenciar um id que não existe na tabela pai (ou apagar o pai com filhos).</td><td>Insira o pai antes; confira com <code>SELECT</code>; ou declare <code>ON DELETE CASCADE/SET NULL</code> na FK.</td></tr>
+<tr><td><strong>23502</strong></td><td><code>ERROR: null value in column "col" violates not-null constraint</code></td><td><code>INSERT</code> sem valor numa coluna <code>NOT NULL</code>.</td><td>Informe o valor ou tire o <code>NOT NULL</code> (com <code>ALTER TABLE</code>).</td></tr>
+<tr><td><strong>23514</strong></td><td><code>ERROR: new row violates check constraint "t_col_check"</code></td><td>Valor que quebra uma regra <code>CHECK</code> (ex.: <code>preco &gt;= 0</code> com preço negativo).</td><td>Corrija o valor para obedecer à regra.</td></tr>
+<tr><td><strong>22P02</strong></td><td><code>ERROR: invalid input syntax for type integer: "abc"</code></td><td>Texto onde o banco esperava número/data (ex.: <code>WHERE id = 'abc'</code>).</td><td>Converta: <code>WHERE id = 1</code> (sem aspas no número) ou <code>'abc'::integer</code> para testar.</td></tr>
+<tr><td><strong>22001</strong></td><td><code>ERROR: value too long for type character varying(2)</code></td><td>Texto maior que o limite do <code>varchar(n)</code>/<code>char(n)</code>.</td><td>Use <code>text</code> (sem limite) ou aumente o <code>n</code>.</td></tr>
+<tr><td><strong>08006</strong></td><td><code>could not connect to server: Connection refused</code></td><td>Servidor parado ou porta errada (padrão 5432).</td><td><code>pg_isready</code>; suba o serviço (<code>sudo systemctl start postgresql</code>); confira a porta.</td></tr>
+<tr><td><strong>28P01</strong></td><td><code>FATAL: password authentication failed for user "ana"</code></td><td>Senha errada (ou usuário errado).</td><td>Confira a senha; no psql, <code>\password ana</code> troca a senha; veja <code>pg_hba.conf</code>.</td></tr>
+<tr><td><strong>3D000</strong></td><td><code>FATAL: database "x" does not exist</code></td><td>Banco não existe no servidor.</td><td><code>\l</code> lista os bancos; crie com <code>CREATE DATABASE x;</code>.</td></tr>
+<tr><td><strong>40P01</strong></td><td><code>ERROR: deadlock detected</code></td><td>Duas transações se travaram mutuamente esperando lock.</td><td>O servidor mata uma delas (faça <code>ROLLBACK</code> e tente de novo na mesma ordem).</td></tr>
+<tr><td><strong>55P03</strong></td><td><code>ERROR: could not obtain lock on relation "t"</code></td><td>Outra sessão travou a tabela/linha e não deu <code>COMMIT</code>.</td><td>Peça para a outra sessão fechar a transação; veja <code>pg_locks</code>.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Provoque os erros no simulador (treino de reconhecimento)</h2>
+
+<div class="try" data-goal="does not exist" data-solucao="SELECT * FROM tabela_fantasma;">
+<p class="try-task"><strong>Missão 1 — 42P01:</strong> consulte uma tabela que não existe: <code>SELECT * FROM tabela_fantasma;</code> — <code>relation "tabela_fantasma" does not exist</code>.</p>
+</div>
+
+<div class="try" data-goal="syntax error" data-solucao="SELEC * FROM clientes;">
+<p class="try-task"><strong>Missão 2 — 42601:</strong> erre a palavra-chave: <code>SELEC * FROM clientes;</code> — <code>syntax error at or near "selec"</code>.</p>
+</div>
+
+<div class="try" data-goal="duplicate key" data-solucao="INSERT INTO clientes (nome, email) VALUES ('Ana Duplicada', 'ana@email.com');">
+<p class="try-task"><strong>Missão 3 — 23505:</strong> repita um email: <code>INSERT INTO clientes (nome, email) VALUES ('Ana Duplicada', 'ana@email.com');</code> — <code>duplicate key value violates unique constraint</code>.</p>
+</div>
+
+<div class="try" data-goal="foreign key" data-solucao="INSERT INTO pedidos (cliente_id) VALUES (999);">
+<p class="try-task"><strong>Missão 4 — 23503:</strong> pedido de cliente inexistente: <code>INSERT INTO pedidos (cliente_id) VALUES (999);</code> — <code>violates foreign key constraint</code>.</p>
+</div>
+
+<div class="tip"><strong>Próxima aula:</strong> <a href="glossario.html">Glossário</a> — todos os termos do PostgreSQL de A a Z (tabela, linha, chave, transação, view, índice…).</div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js?v=1"></script>
+</body>
+</html>

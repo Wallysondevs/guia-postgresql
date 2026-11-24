@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quiz de PostgreSQL — 10 perguntas de múltipla escolha com placar | Guia PostgreSQL</title>
+<meta name="description" content="Quiz do Guia PostgreSQL com 10 perguntas de múltipla escolha sobre o que é PostgreSQL, psql e meta-comandos (\\dt, \\l, \\d), CREATE TABLE e tipos, PRIMARY KEY, INSERT 0 1, SELECT com WHERE, JOIN, GROUP BY + COUNT, SQLSTATE 23505 (duplicate key) e 23503 (foreign key), transação BEGIN/COMMIT/ROLLBACK. Acerte e veja o placar subir — com gabarito comentado e links para as aulas de cada tema.">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<script>try{history.scrollRestoration="manual"}catch(e){}function z(){window.scrollTo(0,0);document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0}window.addEventListener("DOMContentLoaded",z);window.addEventListener("load",z);window.addEventListener("pageshow",z);window.addEventListener("pagehide",function(){window.scrollTo(0,0);document.documentElement.scrollTop=0;});document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a){var h=a.getAttribute("href")||"";if(/[.]html($|[?#])/.test(h)&&a.host===location.host){window.scrollTo(0,0);document.documentElement.scrollTop=0;}}});</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1><span class="hl">Quiz</span> de PostgreSQL</h1>
+
+<p class="intro">Terminou o guia? Hora de <strong>testar o que ficou na cabeça</strong>. São 10 perguntas de múltipla escolha — clique numa opção em cada pergunta e o gabarito aparece na hora (verde = certa, vermelho = errada). Seu placar está logo abaixo e atualiza sozinho a cada acerto.</p>
+
+<div class="note">
+<strong>Você vai testar</strong>
+<ul>
+  <li>O que é PostgreSQL e o que o psql faz (meta-comandos <code>\dt</code>, <code>\l</code>, <code>\d</code>).</li>
+  <li>Estrutura: <code>CREATE TABLE</code>, tipos, <code>PRIMARY KEY</code>, <code>UNIQUE</code>, <code>FOREIGN KEY</code>.</li>
+  <li>Dados: <code>INSERT 0 1</code>, <code>SELECT</code> com <code>WHERE</code>, <code>JOIN</code>, <code>GROUP BY</code> + <code>COUNT</code>.</li>
+  <li>Erros SQLSTATE (23505, 23503) e transações <code>BEGIN/COMMIT/ROLLBACK</code>.</li>
+</ul>
+</div>
+
+<p id="placar">0 de 10</p>
+
+<div class="warning"><strong>Como funciona:</strong> cada pergunta vale 1 ponto e você pode trocar de resposta quantas vezes quiser — só a última marcada conta para o placar (mas tente acertar de primeira!). Se errar alguma, anote o número: os textos entre as perguntas linkam a aula certa para revisar.</div>
+
+<hr>
+
+<h2>Parte 1 — fundamentos e psql</h2>
+<p>O básico que sustenta tudo: o que é o PostgreSQL, o terminal psql e os meta-comandos. Aulas de revisão: <a href="introducao.html">introdução</a>, <a href="primeiro-psql.html">primeiro psql</a> e <a href="psql-metacomandos.html">meta-comandos</a>.</p>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">1. O que é o PostgreSQL, em uma frase?</p>
+<label><input type="radio" name="q1"> Um programa de planilha que roda no navegador.</label>
+<label><input type="radio" name="q1"> Um banco de dados relacional open source: guarda dados em tabelas com tipos fortes e garante integridade com constraints.</label>
+<label><input type="radio" name="q1"> Uma linguagem de programação para fazer sites.</label>
+<label><input type="radio" name="q1"> Um editor de texto para escrever SQL.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">2. No psql, qual meta-comando lista as tabelas do banco atual?</p>
+<label><input type="radio" name="q2"> <code>\l</code></label>
+<label><input type="radio" name="q2"> <code>\du</code></label>
+<label><input type="radio" name="q2"> <code>\dt</code></label>
+<label><input type="radio" name="q2"> <code>\d</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">3. E para ver a estrutura de uma tabela (colunas, tipos, constraints)?</p>
+<label><input type="radio" name="q3"> <code>\l clientes</code></label>
+<label><input type="radio" name="q3"> <code>\dt clientes</code></label>
+<label><input type="radio" name="q3"> <code>\c clientes</code></label>
+<label><input type="radio" name="q3"> <code>\d clientes</code></label>
+</div>
+
+<hr>
+
+<h2>Parte 2 — estrutura e dados</h2>
+<p>Tabelas, tipos, chaves e o CRUD. Aulas: <a href="banco-e-tabelas.html">banco e tabelas</a>, <a href="tipos-de-dados.html">tipos</a>, <a href="constraints.html">constraints</a>, <a href="insert.html">INSERT</a> e <a href="select-basico.html">SELECT</a>.</p>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">4. Qual comando confirma que um INSERT deu certo?</p>
+<label><input type="radio" name="q4"> <code>INSERT 0 1</code> — 1 linha inserida.</label>
+<label><input type="radio" name="q4"> <code>OK</code></label>
+<label><input type="radio" name="q4"> <code>1 row affected</code></label>
+<label><input type="radio" name="q4"> Nada — o psql não confirma INSERT.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Para que serve a <code>PRIMARY KEY</code> de uma tabela?</p>
+<label><input type="radio" name="q5"> Deixar a coluna opcional.</label>
+<label><input type="radio" name="q5"> Identificar cada linha de forma única (e não nula) — o "CPF" da tabela.</label>
+<label><input type="radio" name="q5"> Permitir valores repetidos mais rápido.</label>
+<label><input type="radio" name="q5"> Ligar duas tabelas.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">6. Qual tipo de dados é o indicado para guardar <strong>dinheiro</strong> (preço)?</p>
+<label><input type="radio" name="q6"> <code>real</code> (ponto flutuante rápido)</label>
+<label><input type="radio" name="q6"> <code>text</code></label>
+<label><input type="radio" name="q6"> <code>numeric(10,2)</code> — exato, sem erro de arredondamento</label>
+<label><input type="radio" name="q6"> <code>integer</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">7. O que o <code>JOIN</code> faz?</p>
+<label><input type="radio" name="q7"> Junta o banco inteiro num arquivo só.</label>
+<label><input type="radio" name="q7"> Apaga as linhas repetidas.</label>
+<label><input type="radio" name="q7"> Conta as linhas da tabela.</label>
+<label><input type="radio" name="q7"> Cruza duas tabelas pela chave comum (<code>ON p.cliente_id = c.id</code>) e devolve as linhas combinadas.</label>
+</div>
+
+<hr>
+
+<h2>Parte 3 — consultas, erros e transações</h2>
+<p>Agregações, códigos SQLSTATE e o tudo-ou-nada. Aulas: <a href="agregacoes.html">agregações</a>, <a href="ref-erros.html">cola de erros</a>, <a href="transacoes.html">transações</a> e <a href="projeto-reservas.html">projeto reservas</a>.</p>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">8. O que <code>SELECT estado, COUNT(*) FROM clientes GROUP BY estado;</code> devolve?</p>
+<label><input type="radio" name="q8"> Todas as linhas da tabela, uma a uma.</label>
+<label><input type="radio" name="q8"> Uma linha por estado, com a contagem de clientes em cada um.</label>
+<label><input type="radio" name="q8"> Só o estado que tem mais clientes.</label>
+<label><input type="radio" name="q8"> Um erro, porque COUNT não aceita GROUP BY.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">9. A mensagem <code>ERROR: duplicate key value violates unique constraint</code> tem qual SQLSTATE — e o que significa?</p>
+<label><input type="radio" name="q9"> <code>42P01</code> — tabela não existe.</label>
+<label><input type="radio" name="q9"> <code>42601</code> — erro de sintaxe.</label>
+<label><input type="radio" name="q9"> <code>23505</code> — valor repetido em coluna UNIQUE/PK (ex.: email duplicado).</label>
+<label><input type="radio" name="q9"> <code>23503</code> — pedido de cliente inexistente.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">10. Numa transação (<code>BEGIN</code> …), como <strong>desfazer</strong> tudo que foi feito?</p>
+<label><input type="radio" name="q10"> <code>ROLLBACK;</code> — o banco volta ao estado de antes do BEGIN.</label>
+<label><input type="radio" name="q10"> <code>UNDO;</code></label>
+<label><input type="radio" name="q10"> <code>DELETE FROM transacao;</code></label>
+<label><input type="radio" name="q10"> <code>EXIT;</code></label>
+</div>
+
+<hr>
+
+<h2>Como foi?</h2>
+<p>Olhe o placar lá no topo. Acertou tudo? Ótimo — volte para a <a href="ref-sql.html">cola de SQL</a> sempre que precisar no dia a dia. Errou alguma? Cada parte acima tem os links das aulas correspondentes — revise só o que travou, sem culpa: errar no quiz é de graça.</p>
+
+<div class="note">
+<strong>Quiz não é nota, é bússola:</strong> cada erro aqui é um conceito que ainda não assentou — e agora você sabe exatamente em qual página do guia ele mora.
+</div>
+
+<hr>
+
+<h2>Gabarito comentado</h2>
+<ol class="passo">
+  <li><strong>Banco relacional open source</strong> com tabelas tipadas e constraints. <em>(aula: <a href="introducao.html">introdução</a>)</em></li>
+  <li><strong>\dt</strong> lista tabelas (o <code>\l</code> lista bancos, <code>\du</code> usuários). <em>(<a href="ref-psql.html">ref-psql</a>)</em></li>
+  <li><strong>\d tabela</strong> descreve colunas, tipos e constraints. <em>(<a href="psql-metacomandos.html">meta-comandos</a>)</em></li>
+  <li><strong>INSERT 0 1</strong>: o 0 é o OID, o 1 é a linha inserida. <em>(<a href="insert.html">INSERT</a>)</em></li>
+  <li><strong>PRIMARY KEY</strong> = id único e não nulo da linha. <em>(<a href="constraints.html">constraints</a>)</em></li>
+  <li><strong>numeric(p,s)</strong> para dinheiro — exato; <code>real</code> é aproximado. <em>(<a href="ref-tipos.html">ref-tipos</a>)</em></li>
+  <li><strong>JOIN … ON</strong> cruza as tabelas pela chave comum. <em>(<a href="joins.html">JOINs</a>)</em></li>
+  <li><strong>GROUP BY + COUNT(*)</strong> = uma linha por grupo com a contagem. <em>(<a href="agregacoes.html">agregações</a>)</em></li>
+  <li><strong>23505</strong> = duplicate key (UNIQUE/PK); <strong>23503</strong> = foreign key. <em>(<a href="ref-erros.html">ref-erros</a>)</em></li>
+  <li><strong>ROLLBACK</strong> desfaz a transação; <strong>COMMIT</strong> grava. <em>(<a href="transacoes.html">transações</a> — e o <a href="projeto-reservas.html">projeto reservas</a>)</em></li>
+</ol>
+
+<div class="tip"><strong>Terminou o guia!</strong> Volte ao <a href="index.html">início do Guia PostgreSQL</a> e escolha seu nível — ou releia os <a href="projetos.html">projetos práticos</a> e a seção de <a href="ref-sql.html">referência</a> com tudo o que você acabou de testar aqui.</div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js?v=1"></script>
+</body>
+</html>

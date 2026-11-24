@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CASE WHEN: condicionais no SELECT | Guia PostgreSQL</title>
+<meta name="description" content="CASE WHEN no PostgreSQL: o if/else dentro do SELECT. CASE buscado (WHEN preco < 20 THEN 'barato' ...) para classificar por faixa, CASE simples (WHEN valor) para traduzir códigos, CASE dentro de agregações (SUM(CASE ...)) e no ORDER BY. Sem ELSE o resultado é NULL. Exemplos no psql da ana@notebook no banco loja_aurora (produtos, pedidos) e missões no simulador.">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<script>try{history.scrollRestoration="manual"}catch(e){}function z(){window.scrollTo(0,0);document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0}window.addEventListener("DOMContentLoaded",z);window.addEventListener("load",z);window.addEventListener("pageshow",z);window.addEventListener("pagehide",function(){window.scrollTo(0,0);document.documentElement.scrollTop=0;});document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a){var h=a.getAttribute("href")||"";if(/[.]html($|[?#])/.test(h)&&a.host===location.host){window.scrollTo(0,0);document.documentElement.scrollTop=0;}}});</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1><span class="hl">CASE WHEN</span>: o if/else dentro do SELECT</h1>
+
+<p class="intro">Nem sempre o dado sai "pronto" da tabela — às vezes você precisa <strong>classificar na hora da consulta</strong>: preço baixo/médio/alto, pedido pendente ou concluído. O <code>CASE WHEN</code> é o <code>if/else</code> do SQL: testa condições e devolve um valor para cada caso, como etiquetar produtos numa prateleira.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li><code>CASE WHEN condição THEN valor ... ELSE valor END</code> (CASE "buscado");</li>
+  <li><code>CASE expressão WHEN valor THEN ...</code> (CASE "simples");</li>
+  <li>Dar apelido à coluna calculada (<code>AS faixa</code>);</li>
+  <li>Usar CASE dentro de agregação (<code>SUM(CASE ...)</code>) e no <code>ORDER BY</code>;</li>
+  <li>A pegadinha: sem <code>ELSE</code>, quem não casa com nada ganha <code>NULL</code>;</li>
+  <li>Praticar no simulador de psql.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>CASE buscado: classificar por faixa</h2>
+<p>Vamos etiquetar cada produto do banco <code>loja_aurora</code> como barato, médio ou caro, só olhando o preço:</p>
+<pre class="term">loja_aurora=&gt; SELECT nome, preco,
+               CASE WHEN preco &lt; 20 THEN 'barato'
+                    WHEN preco &lt; 50 THEN 'medio'
+                    ELSE 'caro'
+               END AS faixa
+             FROM produtos;
+   nome   | preco |  faixa
+----------+-------+---------
+ Camiseta | 59.90 | caro
+ Caneca   | 29.90 | medio
+ Adesivo  |  4.50 | barato
+ Poster   | 19.90 | barato
+ Boné     | 49.90 | medio
+(5 rows)</pre>
+<p>O PostgreSQL testa os <code>WHEN</code> <strong>na ordem</strong> e usa o primeiro que for verdade; se nenhum for, cai no <code>ELSE</code>. Por isso a ordem importa: <code>&lt; 20</code> antes de <code>&lt; 50</code>.</p>
+<dl class="anatomy">
+  <dt>CASE</dt><dd>começa o condicional</dd>
+  <dt>WHEN preco &lt; 20 THEN 'barato'</dt><dd>se a condição for verdade, vale esse valor</dd>
+  <dt>WHEN preco &lt; 50 THEN 'medio'</dt><dd>se não, testa o próximo</dd>
+  <dt>ELSE 'caro'</dt><dd>se nenhum casou, vale isso</dd>
+  <dt>END</dt><dd>fecha o CASE (obrigatório!) e <code>AS faixa</code> dá nome à nova coluna</dd>
+</dl>
+
+<hr>
+
+<h2>CASE simples: traduzir códigos</h2>
+<p>Quando você compara a <strong>mesma expressão</strong> com vários valores fixos, a forma simples é mais curta — como traduzir o status do pedido para português:</p>
+<pre class="term">loja_aurora=&gt; SELECT status,
+               CASE status WHEN 'entregue' THEN 'concluido'
+                           ELSE 'aguardando'
+               END AS situacao
+             FROM pedidos;
+  status  |  situacao
+----------+------------
+ entregue | concluido
+ enviado  | aguardando
+ pendente | aguardando
+(3 rows)</pre>
+<p>É equivalente a <code>CASE WHEN status = 'entregue' THEN ...</code>, só que sem repetir a coluna.</p>
+
+<hr>
+
+<h2>CASE dentro de agregação e no ORDER BY</h2>
+<p>O CASE devolve um valor, então pode ir dentro de qualquer função. Aqui contamos quantos pedidos já foram entregues num total só:</p>
+<pre class="term">loja_aurora=&gt; SELECT COUNT(*) AS total,
+               SUM(CASE WHEN status = 'entregue' THEN 1 ELSE 0 END) AS entregues
+             FROM pedidos;
+ total | entregues
+-------+-----------
+     3 |         1
+(1 row)</pre>
+<p>E no <code>ORDER BY</code> ele vira régua de prioridade — "pendente primeiro, depois enviado, por último entregue":</p>
+<pre class="term">loja_aurora=&gt; SELECT id, status FROM pedidos
+             ORDER BY CASE WHEN status = 'pendente' THEN 0
+                           WHEN status = 'enviado'  THEN 1
+                           ELSE 2 END;
+ id |  status
+----+----------
+  3 | pendente
+  2 | enviado
+  1 | entregue
+(3 rows)</pre>
+
+<hr>
+
+<h2>A pegadinha: sem ELSE vira NULL</h2>
+<div class="warning">
+<strong>Se você esquece o ELSE, quem não casa com nenhum WHEN ganha NULL</strong> (aparece vazio no psql)
+</div>
+<pre class="term">loja_aurora=&gt; SELECT nome, CASE WHEN preco &gt; 50 THEN 'caro' END AS faixa
+             FROM produtos;
+   nome   | faixa
+----------+-------
+ Camiseta | caro
+ Caneca   |
+ Adesivo  |
+ Poster   |
+ Boné     |
+(5 rows)</pre>
+<p>Só a Camiseta (59.90) passou no teste; as outras ganharam NULL. E sem o <code>END</code> o comando nem compila:</p>
+<pre class="term">loja_aurora=&gt; SELECT CASE WHEN preco &gt; 50 THEN 'caro' FROM produtos;
+ERROR:  syntax error at or near "FROM"
+LINE 1: SELECT CASE WHEN preco &gt; 50 THEN 'caro' FROM produtos;
+                                              ^</pre>
+
+<hr>
+
+<h2>Missões no simulador</h2>
+<p>O simulador não interpreta CASE, mas as peças que ele usa (ORDER BY, WHERE, GROUP BY) dão para praticá-las:</p>
+
+<div class="try" data-goal="Camiseta" data-solucao="SELECT nome FROM produtos ORDER BY preco DESC LIMIT 1;">
+<p class="try-task"><strong>Missão 1:</strong> ache o produto mais caro (seria o <code>'caro'</code> do CASE): <code>SELECT nome FROM produtos ORDER BY preco DESC LIMIT 1;</code> — a saída mostra <code>Camiseta</code>.</p>
+</div>
+
+<div class="try" data-goal="pendente" data-solucao="SELECT status, COUNT(*) FROM pedidos GROUP BY status;">
+<p class="try-task"><strong>Missão 2:</strong> conte os pedidos por status: <code>SELECT status, COUNT(*) FROM pedidos GROUP BY status;</code> — a saída mostra <code>pendente</code>.</p>
+</div>
+
+<div class="try" data-goal="Poster" data-solucao="SELECT nome FROM produtos WHERE estoque = 0;">
+<p class="try-task"><strong>Missão 3:</strong> ache o produto esgotado (no CASE seria <code>'esgotado'</code>): <code>SELECT nome FROM produtos WHERE estoque = 0;</code> — a saída mostra <code>Poster</code>.</p>
+</div>
+
+<div class="try" data-goal="Eva Nike" data-solucao="SELECT nome FROM clientes WHERE estado = 'PI' ORDER BY nome;">
+<p class="try-task"><strong>Missão 4:</strong> liste os clientes de PI em ordem alfabética: <code>SELECT nome FROM clientes WHERE estado = 'PI' ORDER BY nome;</code> — a saída mostra <code>Eva Nike</code>.</p>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Sintaxe</th><th>Quando usar</th></tr>
+<tr><td>CASE buscado</td><td><code>CASE WHEN preco &lt; 20 THEN 'barato' ... END</code></td><td>condições diferentes (faixas, intervalos)</td></tr>
+<tr><td>CASE simples</td><td><code>CASE status WHEN 'entregue' THEN 'ok' ... END</code></td><td>comparar a mesma coluna com vários valores fixos</td></tr>
+<tr><td>Sem ELSE</td><td>—</td><td>quem não casa com nenhum WHEN ganha <code>NULL</code></td></tr>
+<tr><td>Dentro de função</td><td><code>SUM(CASE WHEN ... THEN 1 ELSE 0 END)</code></td><td>contar/somar por categoria</td></tr>
+</table>
+</div>
+<ul>
+  <li><code>CASE WHEN cond THEN valor ... ELSE valor END</code> — if/else no SELECT; os WHEN são testados na ordem.</li>
+  <li><code>CASE expr WHEN valor THEN ...</code> — forma curta quando a comparação é com a mesma coluna.</li>
+  <li>Sem <code>ELSE</code>, o resultado é <code>NULL</code>; sem <code>END</code>, dá <code>syntax error</code>.</li>
+  <li>CASE vira valor, então funciona dentro de <code>SUM</code>, <code>COUNT</code>, <code>ORDER BY</code> etc.</li>
+</ul>
+
+<div class="tip"><strong>Próxima aula:</strong> <a href="constraints.html">PRIMARY KEY, FOREIGN KEY, UNIQUE, CHECK, NOT NULL</a> — as regras que impedem o banco de aceitar dados quebrados.</div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js?v=1"></script>
+</body>
+</html>

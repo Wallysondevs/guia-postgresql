@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Instalar PostgreSQL no Linux e com Docker | Guia PostgreSQL</title>
+<meta name="description" content="Como instalar o PostgreSQL 16 no Linux (sudo apt install postgresql, systemctl start/enable) e subir um container com docker run --name meu-postgres -e POSTGRES_PASSWORD=... -p 5432:5432 -d postgres:16; como entrar com psql -U postgres e docker exec -it ... psql. No simulador: \\l mostra os 2 bancos (postgres e loja_aurora) e \\dt mostra as tabelas.">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<script>try{history.scrollRestoration="manual"}catch(e){}function z(){window.scrollTo(0,0);document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0}window.addEventListener("DOMContentLoaded",z);window.addEventListener("load",z);window.addEventListener("pageshow",z);window.addEventListener("pagehide",function(){window.scrollTo(0,0);document.documentElement.scrollTop=0;});document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a){var h=a.getAttribute("href")||"";if(/[.]html($|[?#])/.test(h)&&a.host===location.host){window.scrollTo(0,0);document.documentElement.scrollTop=0;}}});</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1><span class="hl">Instalar PostgreSQL</span> no Linux e com Docker</h1>
+
+<p class="intro">Há duas formas comuns de ter um PostgreSQL rodando: <strong>instalando o pacote no Linux</strong> (o banco vira um serviço do sistema, como um arquivista sempre de plantão) ou <strong>subindo um container Docker</strong> (o arquivista inteiro dentro de uma caixa isolada, que você liga e desliga quando quiser). Aqui você aprende as duas — na máquina <code>ana@notebook</code> o PostgreSQL 16 já está no ar.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Instalar no Debian/Ubuntu com <code>sudo apt install postgresql</code> e ligar o serviço com <code>systemctl</code>;</li>
+  <li>Subir com Docker: <code>docker run -e POSTGRES_PASSWORD=... -p 5432:5432 -d postgres:16</code>;</li>
+  <li>Conferir a versão (<code>psql --version</code>) e entrar no psql (<code>psql -U postgres</code>);</li>
+  <li>O que significam a porta <code>5432</code> e a senha do usuário <code>postgres</code>;</li>
+  <li>No simulador: <code>\l</code> lista os bancos e <code>\dt</code> lista as tabelas do "servidor".</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>No Linux (Debian/Ubuntu): pacote + serviço</h2>
+<p>O pacote <code>postgresql</code> instala o servidor e cria um usuário de sistema chamado <code>postgres</code>. Depois de instalar, o banco vira um <strong>serviço</strong> (daemon) gerenciado pelo <code>systemctl</code>:</p>
+<pre class="term">$ sudo apt update &amp;&amp; sudo apt install postgresql
+...
+Setting up postgresql-16 (16.4-1) ...
+$ sudo systemctl start postgresql   <span class="t-a">← liga o serviço agora</span>
+$ sudo systemctl enable postgresql  <span class="t-a">← liga sozinho no boot</span>
+$ psql --version
+psql (PostgreSQL) 16.4
+$ sudo -u postgres psql
+psql (16.4)
+Type "help" for help.
+
+postgres=# \q
+</pre>
+<p>O <code>sudo -u postgres psql</code> entra como o superusuário <code>postgres</code> — no Linux, por padrão, só esse usuário de sistema entra local sem senha. O prompt vira <code>postgres=#</code> (o <code>#</code> avisa: você é o chefão).</p>
+
+<hr>
+
+<h2>Com Docker: o banco inteiro num container</h2>
+<p>Com Docker instalado, um comando sobe o PostgreSQL numa caixa isolada:</p>
+<pre class="term">$ docker run --name meu-postgres -e POSTGRES_PASSWORD=senha123 -p 5432:5432 -d postgres:16
+a1f9c2d8e7b6...
+$ docker ps
+CONTAINER ID   IMAGE         STATUS         PORTS                    NAMES
+a1f9c2d8e7b6   postgres:16   Up 5 seconds   0.0.0.0:5432-&gt;5432/tcp   meu-postgres
+$ docker exec -it meu-postgres psql -U postgres
+psql (16.4)
+postgres=# \q
+</pre>
+<p>Traduzindo o <code>docker run</code>:</p>
+<ul>
+  <li><code>--name meu-postgres</code> — nome do container;</li>
+  <li><code>-e POSTGRES_PASSWORD=senha123</code> — variável de ambiente: a senha do superusuário <code>postgres</code> (obrigatória na primeira subida);</li>
+  <li><code>-p 5432:5432</code> — publica a porta do banco: <code>5432</code> no seu computador aponta para a <code>5432</code> do container;</li>
+  <li><code>-d</code> — roda em segundo plano (detached);</li>
+  <li><code>postgres:16</code> — a imagem oficial do Docker Hub, versão 16.</li>
+</ul>
+<p>De fora do container, você entra com <code>psql -h localhost -U postgres</code> (vai pedir a senha). Para parar: <code>docker stop meu-postgres</code>; para subir de novo: <code>docker start meu-postgres</code>.</p>
+
+<hr>
+
+<h2>Qual usar?</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Comando</th><th>Quando usar</th></tr>
+<tr><td>Pacote do Linux</td><td><code>sudo apt install postgresql</code></td><td>desenvolvimento no próprio SO, serviço sempre ligado</td></tr>
+<tr><td>Docker</td><td><code>docker run ... postgres:16</code></td><td>testes, vários bancos ao mesmo tempo, não sujar o SO</td></tr>
+<tr><td>Nuvem gerenciada (RDS, Supabase…)</td><td>painel web</td><td>produção — o provedor cuida de backup e atualização</td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong>Senha de exemplo, só para estudo local</strong>
+<p><code>senha123</code> serve para o container de teste — em produção use senha forte e <strong>nunca</strong> exponha a porta <code>5432</code> na internet. E anote a senha: se você recriar o container sem o mesmo volume, os dados novos não reconhecem a senha antiga.</p>
+</div>
+
+<hr>
+
+<h2>Conferindo: o servidor está no ar</h2>
+<p>Depois de instalar (qualquer forma), entre no psql e olhe os bancos com <code>\l</code> — se aparecer uma lista, o arquivista está de plantão:</p>
+<pre class="term" data-title="psql — ana@notebook">$ psql -U ana -d loja_aurora
+psql (16.4)
+loja_aurora=&gt; \l
++--------------+--------------+
+| Name         | Owner        |
++--------------+--------------+
+| postgres     | ana          |
+| loja_aurora  | ana          |
++--------------+--------------+
+(2 rows)</pre>
+
+<div class="try" data-goal="(2 rows)" data-solucao="\l">
+<p class="try-task"><strong>Missão:</strong> no simulador (que já é o servidor ligado), rode <code>\l</code>. Você vê os <strong>2 bancos</strong> da máquina: <code>postgres</code> e <code>loja_aurora</code> — prova de que o PostgreSQL está no ar.</p>
+</div>
+
+<div class="try" data-goal="itens_pedido" data-solucao="\dt">
+<p class="try-task"><strong>Missão:</strong> rode <code>\dt</code> e veja as 4 tabelas do banco <code>loja_aurora</code> — a "loja" que vamos usar no curso inteiro.</p>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Linux: <code>sudo apt install postgresql</code> + <code>systemctl start/enable postgresql</code>; entrar com <code>sudo -u postgres psql</code>.</li>
+  <li>Docker: <code>docker run --name meu-postgres -e POSTGRES_PASSWORD=... -p 5432:5432 -d postgres:16</code>; entrar com <code>docker exec -it meu-postgres psql -U postgres</code>.</li>
+  <li>O servidor ouve na porta <code>5432</code>; o cliente de terminal é o <code>psql</code>.</li>
+  <li>Conferiu a instalação? <code>psql --version</code> e <code>\l</code> listando os bancos.</li>
+</ul>
+
+<div class="tip"><strong>Próxima aula:</strong> <a href="primeiro-psql.html">Seu primeiro psql: conectar, listar bancos e sair</a> — <code>\l</code>, <code>\c</code>, <code>\q</code> e o prompt que muda de nome.</div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js?v=1"></script>
+</body>
+</html>

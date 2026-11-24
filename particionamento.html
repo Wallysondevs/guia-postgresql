@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Particionamento de tabelas (RANGE) no PostgreSQL | Guia PostgreSQL</title>
+<meta name="description" content="Particionamento declarativo no PostgreSQL: dividir uma tabela gigante em partições com PARTITION BY RANGE (por data), LIST (por estado) ou HASH; como o INSERT cai na partição certa, o partition pruning no EXPLAIN (só a partição certa é lida), criação de índices na tabela pai, e os cuidados (partição padrão, chave de partição no WHERE, limites). Exemplos no banco loja_aurora.">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<script>try{history.scrollRestoration="manual"}catch(e){}function z(){window.scrollTo(0,0);document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0}window.addEventListener("DOMContentLoaded",z);window.addEventListener("load",z);window.addEventListener("pageshow",z);window.addEventListener("pagehide",function(){window.scrollTo(0,0);document.documentElement.scrollTop=0;});document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a){var h=a.getAttribute("href")||"";if(/[.]html($|[?#])/.test(h)&&a.host===location.host){window.scrollTo(0,0);document.documentElement.scrollTop=0;}}});</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1><span class="hl">Particionamento</span>: dividir tabelas gigantes em fatias</h1>
+
+<p class="intro">Imagine a tabela <code>pedidos</code> com 500 milhões de linhas — um <strong>caderno de 500 mil páginas</strong>. Toda consulta varre páginas demais e o índice vira um monstro. O particionamento separa esse caderno em <strong>cadernos menores por ano</strong>: a consulta só abre o caderno do ano certo. No PostgreSQL 16 isso é declarativo: <code>PARTITION BY RANGE (coluna)</code>. Nesta aula: criar partições, o truque do <em>partition pruning</em> e os cuidados.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Quando particionar faz sentido (dezenas/centenas de milhões de linhas, consultas por faixa) e quando <strong>não</strong> (não particione cedo demais);</li>
+  <li><code>CREATE TABLE … PARTITION BY RANGE (data)</code> e criar partições com <code>PARTITION OF … FOR VALUES FROM (…) TO (…)</code>;</li>
+  <li>Como o <code>INSERT</code> cai sozinho na partição certa — e o erro quando nenhuma partição cobre o valor;</li>
+  <li><em>Partition pruning</em>: o <a href="explain.html">EXPLAIN</a> mostra que só a partição relevante é lida;</li>
+  <li>Os outros tipos: <code>LIST</code> (por estado/região) e <code>HASH</code> (distribuição uniforme);</li>
+  <li>Praticar no psql simulado: consultas por faixa de data em <code>pedidos</code>.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>RANGE por data: um caderno por ano</h2>
+<p>O caso mais comum é particionar por faixa de datas. A tabela "pai" define a chave de partição; cada partição é uma tabela filha com um intervalo:</p>
+<pre class="term">loja_aurora=&gt; CREATE TABLE medicoes (
+loja_aurora(&gt;   id bigint,
+loja_aurora(&gt;   medida date NOT NULL,
+loja_aurora(&gt;   valor numeric
+loja_aurora(&gt; ) PARTITION BY RANGE (medida);
+CREATE TABLE
+loja_aurora=&gt; CREATE TABLE medicoes_2025 PARTITION OF medicoes
+loja_aurora(&gt;   FOR VALUES FROM ('2025-01-01') TO ('2026-01-01');
+CREATE TABLE
+loja_aurora=&gt; CREATE TABLE medicoes_2026 PARTITION OF medicoes
+loja_aurora(&gt;   FOR VALUES FROM ('2026-01-01') TO ('2027-01-01');
+CREATE TABLE</pre>
+<dl class="anatomy">
+  <dt>PARTITION BY RANGE (medida)</dt><dd>Declara: esta tabela será dividida em faixas da coluna <code>medida</code>.</dd>
+  <dt>PARTITION OF medicoes</dt><dd>Esta é uma fatia da tabela pai — não dá para inserir nela direto, só via pai.</dd>
+  <dt>FOR VALUES FROM (…) TO (…)</dt><dd>O intervalo da fatia: <code>FROM</code> é inclusivo, <code>TO</code> é <strong>exclusivo</strong> (2026 vai até 31/12/2025 23:59…).</dd>
+</dl>
+<p>O <code>INSERT</code> na tabela pai cai sozinho na partição certa — o banco roteia a linha:</p>
+<pre class="term">loja_aurora=&gt; INSERT INTO medicoes VALUES (1, '2026-11-24', 36.6);
+INSERT 0 1
+loja_aurora=&gt; SELECT tableoid::regclass, * FROM medicoes;
+     tableoid      | id |  medida    | valor
+-------------------+----+------------+-------
+ medicoes_2026     |  1 | 2026-11-24 | 36.60
+(1 row)</pre>
+<p><code>tableoid</code> mostra em qual partição a linha foi parar. E se o valor não cair em nenhuma partição, o erro é claro:</p>
+<pre class="term">loja_aurora=&gt; INSERT INTO medicoes VALUES (2, '2024-05-10', 22.1);
+ERROR:  no partition of relation "medicoes" found for row
+DETAIL:  Partition key of the failing row contains (medida) = (2024-05-10).</pre>
+
+<hr>
+
+<h2>Partition pruning: só abre o caderno certo</h2>
+<p>A grande vantagem aparece no <code>EXPLAIN</code>: com a chave de partição no <code>WHERE</code>, o planner <strong>descarta as partições que não interessam</strong> antes de ler qualquer dado — é o <em>pruning</em> (poda):</p>
+<pre class="term">loja_aurora=&gt; EXPLAIN SELECT * FROM medicoes WHERE medida &gt;= '2026-06-01';
+                              QUERY PLAN
+-----------------------------------------------------------------------
+ Seq Scan on medicoes_2026  (cost=0.00..18.10 rows=12 width=20)
+   Filter: (medida &gt;= '2026-06-01'::date)</pre>
+<p>Repare: o plano nem menciona <code>medicoes_2025</code> — ela foi podada. A consulta em cima da tabela pai (<code>medicoes</code>) consultou só a partição 2026. Sem o <code>WHERE</code> na chave de partição, todas as partições são lidas (ainda assim, cada uma é menor e tem índice próprio — o que já ajuda).</p>
+
+<div class="warning">
+<strong>Cuidados:</strong> (1) A chave de partição precisa aparecer no <code>WHERE</code> para haver pruning — filtre por outra coluna e todas as partições são varridas. (2) Crie a partição antes de chegar o período, ou use uma partição <strong>DEFAULT</strong> (<code>CREATE TABLE medicoes_outros PARTITION OF medicoes DEFAULT;</code>) para não tomar erro no INSERT. (3) Índices são criados na tabela pai e propagam para as partições: <code>CREATE INDEX idx_medicoes_medida ON medicoes (medida);</code> (em PG 16 dá para criar na pai e anexar os existentes). (4) Foreign keys em tabela particionada são suportadas a partir do PG 12/13 — teste na sua versão. (5) Não particione cedo demais: o overhead de gerenciar dezenas de partições não vale para tabela pequena (YAGNI).
+</div>
+
+<hr>
+
+<h2>LIST e HASH: outras formas de fatiar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo</th><th>Divide por</th><th>Exemplo de uso</th><th>Sintaxe</th></tr>
+<tr><td><code>RANGE</code></td><td>Faixas ordenadas de uma coluna (datas, números)</td><td>Pedidos por ano/mês; medições por período</td><td><code>FOR VALUES FROM ('2026-01-01') TO ('2027-01-01')</code></td></tr>
+<tr><td><code>LIST</code></td><td>Valores discretos de uma coluna</td><td>Pedidos por estado/região (<code>PI</code>, <code>SP</code>…)</td><td><code>FOR VALUES IN ('PI', 'CE')</code></td></tr>
+<tr><td><code>HASH</code></td><td>Hash da chave — distribui uniformemente</td><td>Espalhar dados igualmente entre N partições</td><td><code>PARTITION BY HASH (id)</code> + <code>… 4 PARTITIONS</code></td></tr>
+</table>
+</div>
+<p>Também dá para <strong>compor</strong>: particionar por RANGE de data e, dentro de cada ano, por LIST de estado (subparticionamento). E dá para anexar uma tabela já existente como partição com <code>ATTACH PARTITION</code> — útil para trazer dados antigos de uma tabela normal.</p>
+
+<hr>
+
+<h2>Na prática: faixas de data em pedidos</h2>
+
+<div class="try" data-goal="(2 rows)" data-solucao="SELECT * FROM pedidos WHERE data >= '2026-11-22';">
+<p class="try-task"><strong>Missão:</strong> simule a consulta "poda o caderno certo": digite <code>SELECT * FROM pedidos WHERE data &gt;= '2026-11-22';</code>. Com <code>pedidos</code> particionado por <code>RANGE (data)</code>, o planner leria só a partição de novembro/2026 — e a saída mostra <code>(2 rows)</code>.</p>
+</div>
+
+<div class="try" data-goal="2026-11-23" data-solucao="SELECT * FROM pedidos ORDER BY data DESC LIMIT 1;">
+<p class="try-task"><strong>Missão:</strong> busque o pedido mais recente: <code>SELECT * FROM pedidos ORDER BY data DESC LIMIT 1;</code>. O <code>LIMIT 1</code> com partições por data deixa a busca quase instantânea — a saída mostra a data <code>2026-11-23</code>.</p>
+</div>
+
+<div class="try" data-goal="itens_pedido" data-solucao="\dt">
+<p class="try-task"><strong>Missão:</strong> digite <code>\dt</code> para listar as tabelas do banco <code>loja_aurora</code>. Num banco particionado, <code>\dt</code> mostraria a tabela pai; cada partição aparece com <code>\d+</code> e pode ser consultada direto (útil para manutenção, ex.: <code>VACUUM</code> só numa partição antiga).</p>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Particionar = dividir uma tabela gigante em fatias gerenciáveis: <code>PARTITION BY RANGE/LIST/HASH</code>.</li>
+  <li>RANGE por data é o caso mais comum: <code>FOR VALUES FROM (…) TO (…)</code> (<code>TO</code> é exclusivo); use partição <code>DEFAULT</code> como rede de segurança.</li>
+  <li>O <code>INSERT</code> na tabela pai cai na partição certa sozinho; <code>tableoid::regclass</code> mostra onde a linha foi parar.</li>
+  <li><em>Partition pruning</em>: com a chave de partição no <code>WHERE</code>, o <code>EXPLAIN</code> mostra que só a partição relevante é lida.</li>
+  <li>Índices são criados na tabela pai e propagam para as partições; não particione tabela pequena.</li>
+</ul>
+
+<div class="tip"><strong>Próxima aula:</strong> <a href="extensoes.html">Extensões úteis: pg_trgm, PostGIS, uuid-ossp</a> — o último tijolo do nível avançado: os "aplicativos" que você instala dentro do PostgreSQL para busca fuzzy, mapas e UUIDs.</div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js?v=1"></script>
+</body>
+</html>

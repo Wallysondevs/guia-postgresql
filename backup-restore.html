@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pg_dump e pg_restore: backup e restore do banco | Guia PostgreSQL</title>
+<meta name="description" content="Faça backup do PostgreSQL com pg_dump (formato texto, custom -Fc, diretório -Fd) e restaure com pg_restore ou psql; entenda backup lógico vs físico, como salvar só uma tabela com -t, o perigo do TRUNCATE sem querer e a regra de testar o restore — com comandos de verdade no terminal da ana@notebook.">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<script>try{history.scrollRestoration="manual"}catch(e){}function z(){window.scrollTo(0,0);document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0}window.addEventListener("DOMContentLoaded",z);window.addEventListener("load",z);window.addEventListener("pageshow",z);window.addEventListener("pagehide",function(){window.scrollTo(0,0);document.documentElement.scrollTop=0;});document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a){var h=a.getAttribute("href")||"";if(/[.]html($|[?#])/.test(h)&&a.host===location.host){window.scrollTo(0,0);document.documentElement.scrollTop=0;}}});</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1><span class="hl">Backup e restore</span> com pg_dump e pg_restore</h1>
+
+<p class="intro">Imagine que o banco <code>loja_aurora</code> é um <strong>caderno com todas as planilhas da loja</strong>. O <code>pg_dump</code> tira uma <strong>fotocópia completa</strong> desse caderno num arquivo; o <code>pg_restore</code> (ou o <code>psql</code>) cola a fotocópia num caderno novo. Nesta aula: os formatos de backup, como salvar só uma tabela, e a regra de ouro — <strong>backup que nunca foi testado não existe</strong>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Por que backup existe: disco queima, <code>DELETE</code>/<code>TRUNCATE</code> sem <code>WHERE</code>, ransomware, erro humano;</li>
+  <li><code>pg_dump</code> em formato texto (SQL legível) e <code>-Fc</code> (custom, comprimido, paralelo);</li>
+  <li>Salvar só uma tabela com <code>-t</code> e um banco inteiro com todos os objetos;</li>
+  <li>Restaurar com <code>pg_restore</code> (formato custom) ou <code>psql</code> (formato texto);</li>
+  <li>A diferença entre backup <strong>lógico</strong> (pg_dump) e <strong>físico</strong> (cópia dos arquivos do disco);</li>
+  <li>Praticar no psql simulado: criar, gravar e esvaziar uma tabela — o drama que o backup evita.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>O comando que salva o dia: pg_dump</h2>
+<p>O <code>pg_dump</code> roda <strong>fora</strong> do psql, no terminal da máquina (por isso o prompt é <code>ana@notebook:~$</code>). Ele lê o banco inteiro e gera um arquivo com os comandos SQL para recriar tudo — tabelas, dados, índices, roles:</p>
+<pre class="term">$ pg_dump -U ana -d loja_aurora -f backup_loja.sql
+$ ls -lh backup_loja.sql
+-rw-rw-r-- 1 ana ana 12K Nov 24 16:20 backup_loja.sql</pre>
+<p>O <code>-f</code> define o arquivo de saída. Sem ele, o backup vai para a tela (útil para inspecionar). O arquivo <code>backup_loja.sql</code> é texto puro: dá para abrir, ler e até editar — é o "caderno fotocopiado".</p>
+
+<dl class="anatomy">
+  <dt>pg_dump</dt><dd>O programa que lê o banco e gera o arquivo de backup.</dd>
+  <dt>-U ana</dt><dd>Conecta como o usuário <code>ana</code>.</dd>
+  <dt>-d loja_aurora</dt><dd>O banco que será fotocopiado.</dd>
+  <dt>-f backup_loja.sql</dt><dd>Grava a saída neste arquivo em vez de imprimir na tela.</dd>
+</dl>
+
+<hr>
+
+<h2>Formatos: texto, custom, diretório e tar</h2>
+<p>O formato texto (padrão) é legível, mas grande e inflexível. Para produção, prefira o <strong>formato custom</strong> (<code>-Fc</code>): comprimido, aceita restore paralelo e permite restaurar só parte do backup:</p>
+<pre class="term">$ pg_dump -U ana -d loja_aurora -Fc -f backup_loja.dump
+$ ls -lh backup_loja.dump
+-rw-rw-r-- 1 ana ana 8,4K Nov 24 16:22 backup_loja.dump</pre>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Formato</th><th>Flag</th><th>Como é</th><th>Quando usar</th></tr>
+<tr><td>Texto SQL (plain)</td><td>(padrão)</td><td>Arquivo <code>.sql</code> legível, restaura com <code>psql</code></td><td>Backups pequenos, inspección, commit em git do schema</td></tr>
+<tr><td>Custom</td><td><code>-Fc</code></td><td>Binário comprimido, restaura com <code>pg_restore</code></td><td>Produção: menor, rápido e restauração seletiva/paralela</td></tr>
+<tr><td>Diretório</td><td><code>-Fd</code></td><td>Vários arquivos numa pasta, restore paralelo com <code>-j</code></td><td>Bancos grandes (vários núcleos trabalhando no restore)</td></tr>
+<tr><td>Tar</td><td><code>-Ft</code></td><td>Arquivo <code>.tar</code></td><td>Quando outra ferramenta exige tar</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Restore: colar a fotocópia num caderno novo</h2>
+<p>Restaurar é criar um banco vazio e jogar o backup dentro. Com formato custom, use o <code>pg_restore</code>; com formato texto, use o próprio <code>psql</code>:</p>
+<pre class="term">$ psql -U ana -d postgres -c "CREATE DATABASE loja_aurora_restaurada;"
+CREATE DATABASE
+$ pg_restore -U ana -d loja_aurora_restaurada backup_loja.dump
+$ psql -U ana -d loja_aurora_restaurada -c "SELECT COUNT(*) FROM clientes;"
+ count
+-------
+     5
+(1 row)</pre>
+<p>Para restaurar <strong>só uma tabela</strong> do backup custom: <code>pg_restore -t pedidos -d loja_aurora_restaurada backup_loja.dump</code>. Para salvar só uma tabela no backup: <code>pg_dump -t pedidos …</code>.</p>
+<pre class="term">$ pg_dump -U ana -d loja_aurora -t pedidos -f so_pedidos.sql
+$ psql -U ana -d loja_aurora -f backup_loja.sql   # restaura backup texto: replay do SQL</pre>
+
+<div class="warning">
+<strong>Perigo real:</strong> rode <code>pg_restore</code> num banco <em>limpo</em>. Num banco que já tem as tabelas, o restore dá erro de <code>relation already exists</code> — e a flag <code>--clean</code> apaga as tabelas <em>antes</em> de recriar. Parece util, mas se você mirar o banco errado, ela mesma destrói os dados. E a regra suprema: <strong>teste o restore</strong> numa máquina de teste todo mês. Backup que você nunca restaurou pode estar corrompido sem você saber.
+</div>
+
+<hr>
+
+<h2>Lógico vs físico: duas formas de fotocópia</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>Backup lógico (pg_dump)</th><th>Backup físico (pg_basebackup)</th></tr>
+<tr><td><strong>O que copia</strong></td><td>O conteúdo, em SQL/binário (recria o banco do zero)</td><td>Os arquivos internos do disco, byte a byte</td></tr>
+<tr><td><strong>Vantagem</strong></td><td>Portátil entre versões e máquinas; restore seletivo</td><td>Restauração quase instantânea; base da replicação</td></tr>
+<tr><td><strong>Desvantagem</strong></td><td>Restore de banco grande demora (recria tudo)</td><td>Só restaura a máquina/versão compatíveis; precisa de todos os arquivos</td></tr>
+<tr><td><strong>Quando usar</strong></td><td>Backup lógico periodic, migrações, "foto" do schema</td><td>Recuperação de desastre rápida, standby (ver aula de replicação)</td></tr>
+</table>
+</div>
+<p>Na prática as empresas usam os dois: <code>pg_dump</code> todo dia (lógico) e <code>pg_basebackup</code> contínuo (físico) — mas isso é assunto da aula de <a href="replicacao.html">replicação</a>.</p>
+
+<hr>
+
+<h2>O drama que o backup evita</h2>
+<p>Alguém roda <code>TRUNCATE</code> na tabela errada, ou um <code>DELETE</code> sem <code>WHERE</code>, às 3h da manhã. Sem backup, os dados viraram fumaça. Veja no simulador como é fácil destruir dados — e por que a fotocópia salva:</p>
+
+<div class="try" data-goal="CREATE TABLE" data-solucao="CREATE TABLE teste_backup (id integer, nome text);">
+<p class="try-task"><strong>Missão:</strong> crie uma tabela de teste: <code>CREATE TABLE teste_backup (id integer, nome text);</code> — a saída deve mostrar <code>CREATE TABLE</code>.</p>
+</div>
+
+<div class="try" data-goal="INSERT 0 1" data-solucao="INSERT INTO teste_backup VALUES (1, 'dado precioso');">
+<p class="try-task"><strong>Missão:</strong> grave um dado nela: <code>INSERT INTO teste_backup VALUES (1, 'dado precioso');</code> — confirme o <code>INSERT 0 1</code>.</p>
+</div>
+
+<div class="try" data-goal="TRUNCATE TABLE" data-solucao="TRUNCATE teste_backup;">
+<p class="try-task"><strong>Missão:</strong> agora o acidente: rode <code>TRUNCATE teste_backup;</code>. A tabela esvazia na hora, sem perguntar — é exatamente por isso que o <code>pg_dump</code> de ontem à noite é o seu seguro.</p>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>pg_dump -U ana -d loja_aurora -f backup.sql</code> gera o backup em texto; <code>-Fc -f backup.dump</code> gera o formato custom comprimido.</li>
+  <li>Restaure texto com <code>psql -d banco -f backup.sql</code>; custom com <code>pg_restore -d banco backup.dump</code> (banco precisa existir e estar limpo).</li>
+  <li><code>-t tabela</code> salva/restaura só uma tabela; <code>-Fd</code> + <code>-j N</code> acelera bancos grandes.</li>
+  <li>Lógico (pg_dump) = portável e seletivo; físico (pg_basebackup) = rápido e base da replicação.</li>
+  <li>Regra de ouro: teste o restore regularmente e guarde cópias em outro lugar (outro disco, outra máquina, nuvem).</li>
+</ul>
+
+<div class="tip"><strong>Próxima aula:</strong> <a href="seguranca.html">SSL, pg_hba.conf e boas práticas</a> — o backup protege os dados, mas a segurança protege o <em>acesso</em> a eles: quem entra no prédio e por qual porta.</div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js?v=1"></script>
+</body>
+</html>

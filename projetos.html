@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Projetos práticos de PostgreSQL — bancos completos passo a passo | Guia PostgreSQL</title>
+<meta name="description" content="Seção de projetos do Guia PostgreSQL: 4 bancos completos modelados passo a passo — loja virtual (clientes, produtos, pedidos, itens_pedido com JOINs e agregações), blog (posts, comentários e tags N—N), sistema de reservas com transação e controle de conflito, e API Node.js + pg com pool de conexões. Cada projeto tem SQL completo e missões no psql simulado do banco loja_aurora.">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<script>try{history.scrollRestoration="manual"}catch(e){}function z(){window.scrollTo(0,0);document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0}window.addEventListener("DOMContentLoaded",z);window.addEventListener("load",z);window.addEventListener("pageshow",z);window.addEventListener("pagehide",function(){window.scrollTo(0,0);document.documentElement.scrollTop=0;});document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a){var h=a.getAttribute("href")||"";if(/[.]html($|[?#])/.test(h)&&a.host===location.host){window.scrollTo(0,0);document.documentElement.scrollTop=0;}}});</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Seção de <span class="hl">projetos</span> — bancos de verdade</h1>
+
+<p class="intro">Chegou a hora de <strong>juntar as peças</strong>. Até aqui você aprendeu <code>CREATE TABLE</code>, <code>INSERT</code>, <code>SELECT</code> com <code>JOIN</code>, agregações, constraints e transações um a um. Agora a Ana vai montar <strong>quatro bancos completos</strong>, do tipo que sustenta sistemas de verdade: uma <strong>loja virtual</strong>, um <strong>blog</strong>, um <strong>sistema de reservas</strong> com controle de conflito e uma <strong>API Node.js</strong> conectada com <code>pg</code>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A modelar tabelas que se relacionam com <code>PRIMARY KEY</code> e <code>FOREIGN KEY</code> (projeto loja).</li>
+  <li>A resolver relações N—N com tabela de ligação (projeto blog: posts × tags).</li>
+  <li>A proteger uma operação com <code>BEGIN/COMMIT/ROLLBACK</code> e evitar reserva duplicada (projeto reservas).</li>
+  <li>A conectar uma aplicação Node.js ao PostgreSQL com <code>pg</code> e pool de conexões (projeto API).</li>
+  <li>A ler os erros reais de integridade (chave duplicada, chave estrangeira) que esses projetos provocam.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Como funcionam os projetos</h2>
+<p>Cada projeto é um <strong>passo a passo curto</strong>, com o SQL completo nas caixas de arquivo (<code>schema.sql</code>, <code>server.js</code>…) e a saída real do <strong>psql</strong> nas caixas de terminal. Nas caixas <strong>Experimente você mesmo no terminal</strong> roda o psql simulado da máquina fictícia <strong>ana@notebook</strong> (PostgreSQL 16, banco <code>loja_aurora</code>, com as tabelas <code>clientes</code>, <code>produtos</code>, <code>pedidos</code> e <code>itens_pedido</code>): cada caixa tem uma <strong>missão</strong> — digite o comando pedido e, quando a saída certa aparecer, gagne o ✔ "Missão cumprida!". Se travar, clique em <strong>Ver comando</strong>; para zerar tudo, clique em <strong>Reiniciar</strong>.</p>
+
+<div class="try" data-goal="itens_pedido" data-solucao="\dt">
+<p class="try-task"><strong>Missão:</strong> antes de começar, digite <code>\dt</code> no terminal abaixo e veja as quatro tabelas que já existem no banco <code>loja_aurora</code> — é com elas que o projeto da loja trabalha.</p>
+</div>
+
+<pre class="term">loja_aurora=&gt; \dt
+            List of relations
+ Schema |    Name    | Type  | Owner
+--------+------------+-------+-------
+ public | clientes   | table | ana
+ public | itens_pedido | table | ana
+ public | pedidos    | table | ana
+ public | produtos   | table | ana
+(4 rows)</pre>
+
+<hr>
+
+<h2>Os quatro projetos</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Projeto</th><th>O que você monta</th><th>O que pratica</th></tr>
+<tr><td><a href="projeto-loja.html">1. Loja virtual</a></td><td>Banco da loja Aurora: <code>clientes</code>, <code>produtos</code>, <code>pedidos</code> e <code>itens_pedido</code>, com dados de exemplo e consultas de vendas.</td><td><code>CREATE TABLE</code> com PK/FK, <code>INSERT</code>, <code>JOIN</code>, <code>GROUP BY</code> + <code>COUNT/SUM</code>, erros 23505 e 23503</td></tr>
+<tr><td><a href="projeto-blog.html">2. Blog</a></td><td>Posts com comentários e tags — incluindo a relação N—N entre posts e tags via tabela de ligação.</td><td><code>LEFT JOIN</code>, tabela de ligação <code>post_tags</code>, <code>CREATE VIEW</code>, <code>LIKE</code></td></tr>
+<tr><td><a href="projeto-reservas.html">3. Sistema de reservas</a></td><td>Reserva de itens com controle de conflito: duas pessoas não podem reservar o último exemplar.</td><td><code>BEGIN/COMMIT/ROLLBACK</code>, <code>SELECT … FOR UPDATE</code>, lock e transação ACID</td></tr>
+<tr><td><a href="projeto-api-node.html">4. API Node.js + pg</a></td><td>API REST que lê e grava no banco <code>loja_aurora</code> usando o driver <code>pg</code> com pool.</td><td><code>new Pool()</code>, <code>pool.query()</code>, rotas Express, tratamento de erro de conexão</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Pré-requisitos</h2>
+<ul>
+  <li>Ter passado pelos três níveis: <a href="introducao.html">introdução</a>, <a href="banco-e-tabelas.html">banco e tabelas</a>, <a href="insert.html">INSERT</a>, <a href="select-basico.html">SELECT</a>, <a href="joins.html">JOINs</a>, <a href="agregacoes.html">agregações</a>, <a href="constraints.html">constraints</a> e <a href="transacoes.html">transações</a>.</li>
+  <li>Saber o básico do terminal: <code>psql</code>, <code>\dt</code>, setinha pra cima (histórico) e <kbd>Ctrl</kbd>+<kbd>L</kbd> para limpar.</li>
+  <li>Para o projeto 4, o básico de Node.js: <code>npm init -y</code>, <code>npm install</code>, <code>node arquivo.js</code>.</li>
+</ul>
+
+<div class="try" data-goal="Ana Souza" data-solucao="SELECT * FROM clientes LIMIT 3;">
+<p class="try-task"><strong>Missão:</strong> aqueça o psql simulado: digite <code>SELECT * FROM clientes LIMIT 3;</code> e veja os primeiros clientes da loja (a saída mostra <code>Ana Souza</code> e termina com <code>(3 rows)</code>).</p>
+</div>
+
+<div class="note">
+<strong>Regra de bolso dos projetos:</strong> todo banco segue o mesmo roteiro — <strong>modelar</strong> (<code>CREATE TABLE</code> com PK/FK) → <strong>popular</strong> (<code>INSERT</code>) → <strong>consultar</strong> (<code>SELECT</code> com <code>JOIN</code>/<code>GROUP BY</code>) → <strong>proteger</strong> (transação + constraints) → <strong>conectar</strong> (aplicação com pool). Se travar, volte por esse roteiro; a página <a href="problemas.html">Problemas comuns</a> cobre as trombadas típicas.</div>
+
+<div class="tip"><strong>Próxima aula:</strong> <a href="projeto-loja.html">Projeto 1 — Loja virtual</a> — clientes, produtos, pedidos e itens_pedido modelados com SQL completo.</div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js?v=1"></script>
+</body>
+</html>

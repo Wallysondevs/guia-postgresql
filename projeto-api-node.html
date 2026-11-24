@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Projeto 4 — API Node.js + pg (pool de conexões) | Guia PostgreSQL</title>
+<meta name="description" content="Projeto prático de PostgreSQL: API REST em Node.js que consulta o banco loja_aurora com o driver pg e pool de conexões (new Pool, pool.query, max: 20). Passo a passo: npm init, npm install express pg, src/db.js com a configuração do pool, src/server.js com rotas GET /clientes, GET /clientes/:id/pedidos (JOIN) e POST /pedidos, teste com curl e tratamento dos erros de conexão (ECONNREFUSED) e de FK. Missões no psql simulado.">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<script>try{history.scrollRestoration="manual"}catch(e){}function z(){window.scrollTo(0,0);document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0}window.addEventListener("DOMContentLoaded",z);window.addEventListener("load",z);window.addEventListener("pageshow",z);window.addEventListener("pagehide",function(){window.scrollTo(0,0);document.documentElement.scrollTop=0;});document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a){var h=a.getAttribute("href")||"";if(/[.]html($|[?#])/.test(h)&&a.host===location.host){window.scrollTo(0,0);document.documentElement.scrollTop=0;}}});</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Projeto 4 — <span class="hl">API Node.js + pg</span> com pool</h1>
+
+<p class="intro">Banco nenhum serve se a aplicação não consegue falar com ele. Neste projeto a Ana cria uma <strong>API REST</strong> que expõe a loja Aurora pela web: o navegador chama <code>GET /clientes</code> e a API responde com JSON tirado do PostgreSQL. A ponte entre os dois mundos é o driver <strong><code>pg</code></strong>, usando um <strong>pool de conexões</strong> — pense nele como um balcão com vários atendentes (<code>max: 20</code>): cada requisição pega um atendente emprestado e devolve, em vez de abrir uma porta nova no banco a cada vez.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A iniciar o projeto: <code>npm init -y</code>, <code>npm install express pg</code>.</li>
+  <li>A configurar o pool em <code>src/db.js</code>: <code>new Pool({ host, database, user, password, port, max })</code>.</li>
+  <li>Rotas que consultam com <code>await pool.query('SELECT …')</code> e respondem <code>res.json(result.rows)</code>.</li>
+  <li>Tratamento de erro: conexão recusada (<code>ECONNREFUSED</code>) e violação de FK voltando <code>409</code>.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Passo 1 — iniciar o projeto</h2>
+<pre class="term" data-cwd="~/projeto">$ mkdir api-loja
+$ cd api-loja
+$ npm init -y
+wrote to /home/ana/projeto/api-loja/package.json
+$ npm install express pg
+added 72 packages, and audited 73 packages in 5s
+$ node --version
+v20.11.0</pre>
+
+<hr>
+
+<h2>Passo 2 — a configuração do pool (src/db.js)</h2>
+<p>Toda conexão com o PostgreSQL passa pelo <code>Pool</code>. As credenciais ficam em variáveis de ambiente (<code>.env</code>) — <strong>nunca no código</strong>:</p>
+<pre class="file" data-file=".env">PGHOST=localhost
+PGPORT=5432
+PGDATABASE=loja_aurora
+PGUSER=ana
+PGPASSWORD=segredo</pre>
+<pre class="file" data-file="src/db.js">// src/db.js — o pool de conexões com o PostgreSQL
+const { Pool } = require("pg");
+
+const pool = new Pool({
+  host: process.env.PGHOST || "localhost",
+  port: Number(process.env.PGPORT || 5432),
+  database: process.env.PGDATABASE || "loja_aurora",
+  user: process.env.PGUSER || "ana",
+  password: process.env.PGPASSWORD,
+  max: 20,              // até 20 conexões simultâneas no banco
+  idleTimeoutMillis: 30000,  // fecha conexão ociosa depois de 30s
+});
+
+module.exports = { pool };</pre>
+<dl class="anatomy">
+  <dt>new Pool({…})</dt><dd>cria o balcão de conexões reutilizáveis com o banco</dd>
+  <dt>database: "loja_aurora"</dt><dd>o banco que a API vai usar</dd>
+  <dt>max: 20</dt><dd>limite de conexões abertas ao mesmo tempo (o resto espera na fila)</dd>
+  <dt>idleTimeoutMillis</dt><dd>descarta conexão parada para não deixar porta sobrando no servidor</dd>
+</dl>
+
+<hr>
+
+<h2>Passo 3 — o servidor (src/server.js)</h2>
+<p>Três rotas: listar clientes, ver os pedidos de um cliente (com <code>JOIN</code> no SQL) e criar pedido (com tratamento do erro de FK):</p>
+<pre class="file" data-file="src/server.js">// src/server.js — API da loja Aurora
+const express = require("express");
+const { pool } = require("./db");
+
+const app = express();
+app.use(express.json()); // lê o corpo JSON dos POSTs
+
+// GET /clientes → lista todos os clientes
+app.get("/clientes", async (req, res) =&gt; {
+  const result = await pool.query("SELECT id, nome, email, estado FROM clientes ORDER BY id");
+  res.json(result.rows);
+});
+
+// GET /clientes/:id/pedidos → pedidos do cliente, com JOIN
+app.get("/clientes/:id/pedidos", async (req, res) =&gt; {
+  const result = await pool.query(
+    `SELECT p.id, p.data, p.status
+     FROM pedidos p
+     WHERE p.cliente_id = $1
+     ORDER BY p.data`,
+    [req.params.id]          // $1 = parâmetro seguro (sem SQL injection)
+  );
+  res.json(result.rows);
+});
+
+// POST /pedidos → cria pedido { "cliente_id": 1 }
+app.post("/pedidos", async (req, res) =&gt; {
+  try {
+    const result = await pool.query(
+      "INSERT INTO pedidos (cliente_id) VALUES ($1) RETURNING *",
+      [req.body.cliente_id]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    if (err.code === "23503") {
+      // foreign key: cliente não existe
+      return res.status(409).json({ erro: "cliente não existe", detalhe: err.detail });
+    }
+    console.error(err);
+    res.status(500).json({ erro: "falha interna" });
+  }
+});
+
+app.listen(3000, () =&gt; console.log("API no ar em http://localhost:3000"));
+// rode com: node src/server.js  (ou npm i -D nodemon e use nodemon)</pre>
+
+<div class="note"><strong>Por que <code>$1</code> no lugar de concatenar?</strong> <code>"…WHERE cliente_id = " + req.params.id</code> abre brecha para <strong>SQL injection</strong> (alguém manda <code>1 OR 1=1</code>). Com <code>$1</code>, o driver envia o valor separado e o servidor trata como texto puro — sempre parametrize.</div>
+
+<hr>
+
+<h2>Passo 4 — rodar e testar com curl</h2>
+<pre class="term" data-cwd="~/projeto/api-loja">$ node src/server.js
+API no ar em http://localhost:3000
+$ curl http://localhost:3000/clientes
+[{"id":1,"nome":"Ana Souza","email":"ana@email.com","estado":"PI"},…]
+$ curl http://localhost:3000/clientes/1/pedidos
+[{"id":1,"data":"2026-11-20","status":"entregue"},{"id":3,"data":"2026-11-23","status":"pendente"}]
+$ curl -X POST -H "Content-Type: application/json" -d '{"cliente_id":1}' http://localhost:3000/pedidos
+{"id":4,"cliente_id":1,"data":"2026-11-24","status":"pendente"}
+$ curl -X POST -H "Content-Type: application/json" -d '{"cliente_id":999}' http://localhost:3000/pedidos
+{"erro":"cliente não existe","detalhe":"Key (cliente_id)=(999) is not present in table \"clientes\"."}</pre>
+
+<div class="warning"><strong>Erro real de conexão:</strong> se o PostgreSQL estiver fora do ar ou a senha errada, a API morre na primeira query:
+<pre class="term">$ node src/server.js
+(node:1234) UnhandledPromiseRejectionWarning: Error: connect ECONNREFUSED 127.0.0.1:5432
+    at …
+Error: password authentication failed for user "ana"</pre>
+<strong>Solução:</strong> confira se o servidor está no ar (<code>pg_isready</code>), a porta (5432) e as variáveis do <code>.env</code> — veja <a href="problemas.html">Problemas comuns</a>.</div>
+
+<hr>
+
+<h2>As mesmas consultas no psql simulado</h2>
+<p>Tudo que a API roda de SQL dá para testar antes no psql — é assim que se depura: copie a query da rota e rode no terminal:</p>
+
+<div class="try" data-goal="Ana Souza" data-solucao="SELECT c.nome, p.status FROM clientes c JOIN pedidos p ON c.id = p.cliente_id;">
+<p class="try-task"><strong>Missão 1:</strong> rode no simulador a query do <code>JOIN</code> usada na rota: <code>SELECT c.nome, p.status FROM clientes c JOIN pedidos p ON c.id = p.cliente_id;</code> — a saída mostra <code>Ana Souza</code>.</p>
+</div>
+
+<div class="try" data-goal="INSERT 0 1" data-solucao="INSERT INTO pedidos (cliente_id, status) VALUES (3, 'pendente');">
+<p class="try-task"><strong>Missão 2:</strong> simule o <code>POST /pedidos</code>: <code>INSERT INTO pedidos (cliente_id, status) VALUES (3, 'pendente');</code> — <code>INSERT 0 1</code>.</p>
+</div>
+
+<div class="try" data-goal="foreign key" data-solucao="INSERT INTO pedidos (cliente_id) VALUES (999);">
+<p class="try-task"><strong>Missão 3:</strong> simule o erro que a rota devolve com <code>409</code>: <code>INSERT INTO pedidos (cliente_id) VALUES (999);</code> — a saída traz <code>violates foreign key constraint</code> (é esse <code>err.code === "23503"</code> que o <code>catch</code> da API captura).</p>
+</div>
+
+<hr>
+
+<h2>Resumo do projeto</h2>
+<ul>
+  <li>Roteiro: <code>npm init -y</code> → <code>npm install express pg</code> → <code>.env</code> com credenciais → <code>src/db.js</code> (pool) → <code>src/server.js</code> (rotas) → <code>node src/server.js</code> → testar com <code>curl</code>.</li>
+  <li><code>pool.query(sql, [params])</code> sempre com parâmetros <code>$1, $2…</code> — nunca concatene texto na query.</li>
+  <li>O resultado vem em <code>result.rows</code> (array de objetos) — é isso que vira JSON com <code>res.json()</code>.</li>
+  <li>Erros do banco chegam como exceções com <code>err.code</code> (o SQLSTATE: <code>23503</code> = FK) — dá para traduzir em status HTTP.</li>
+</ul>
+
+<div class="tip"><strong>Próxima aula:</strong> <a href="ref-sql.html">Cola de comandos SQL</a> — DDL, DML, DQL e transações em formato de consulta rápida.</div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js?v=1"></script>
+</body>
+</html>

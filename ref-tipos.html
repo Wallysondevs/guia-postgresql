@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cola de tipos de dados do PostgreSQL — text, varchar, integer, numeric, date, jsonb, uuid | Guia PostgreSQL</title>
+<meta name="description" content="Cola de consulta rápida dos tipos de dados do PostgreSQL: texto (text, varchar(n), char(n)), números (smallint, integer, bigint, numeric(p,s), real, serial), booleano, datas (date, time, timestamp, timestamptz, interval), JSON (json, jsonb), uuid, bytea e arrays — com exemplo, quando usar e as armadilhas (char preenche com espaços, numeric é exato para dinheiro, float é aproximado). Missão no psql simulado.">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<script>try{history.scrollRestoration="manual"}catch(e){}function z(){window.scrollTo(0,0);document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0}window.addEventListener("DOMContentLoaded",z);window.addEventListener("load",z);window.addEventListener("pageshow",z);window.addEventListener("pagehide",function(){window.scrollTo(0,0);document.documentElement.scrollTop=0;});document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a){var h=a.getAttribute("href")||"";if(/[.]html($|[?#])/.test(h)&&a.host===location.host){window.scrollTo(0,0);document.documentElement.scrollTop=0;}}});</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Cola de <span class="hl">tipos de dados</span> do PostgreSQL</h1>
+
+<p class="intro">O tipo de cada coluna é a primeira linha de defesa do banco: o PostgreSQL <strong>recusa</strong> dado que não cabe no tipo (<code>invalid input syntax</code>). Pense no tipo como o tamanho da gaveta do arquivo: texto vai em gaveta de texto, número em gaveta de número, data em gaveta de data. Esta cola lista os que você mais usa e quando escolher cada um.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Texto: <code>text</code> (ilimitado, preferido), <code>varchar(n)</code>, <code>char(n)</code>.</li>
+  <li>Números: <code>integer</code>, <code>bigint</code>, <code>numeric(p,s)</code> (exato — dinheiro), <code>real</code>/<code>double precision</code> (aproximado).</li>
+  <li>Data/hora: <code>date</code>, <code>timestamp</code>, <code>timestamptz</code>, <code>interval</code> · <code>boolean</code> · <code>jsonb</code> · <code>uuid</code>.</li>
+  <li>Sequências: <code>serial</code>/<code>bigserial</code> (id auto-incremento).</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Texto</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo</th><th>Exemplo</th><th>Quando usar</th></tr>
+<tr><td><code>text</code></td><td><code>nome text</code></td><td><strong>O padrão para texto</strong> — sem limite de tamanho. Prefira sempre.</td></tr>
+<tr><td><code>varchar(n)</code></td><td><code>email varchar(255)</code></td><td>texto com limite (valida tamanho máximo); <code>n</code> é o máximo de caracteres.</td></tr>
+<tr><td><code>char(n)</code></td><td><code>estado char(2)</code></td><td>texto de tamanho <strong>fixo</strong> que o banco preenche com espaços (ex.: <code>'PI'</code>, código de país).</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Números</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo</th><th>Faixa</th><th>Quando usar</th></tr>
+<tr><td><code>smallint</code></td><td>−32.768 … 32.767</td><td>contagens pequenas (nota de 0 a 10, estoque baixo).</td></tr>
+<tr><td><code>integer</code></td><td>± ~2,1 bilhões</td><td><strong>o padrão para inteiros</strong> (id, quantidade, idade).</td></tr>
+<tr><td><code>bigint</code></td><td>± ~9 quintilhões</td><td>ids muito grandes, contadores de rede social, timestamps em ms.</td></tr>
+<tr><td><code>numeric(p,s)</code></td><td>exato, até 131.072 dígitos</td><td><strong>dinheiro e valores exatos</strong> — <code>numeric(10,2)</code> guarda 59.90 sem erro de arredondamento.</td></tr>
+<tr><td><code>real</code> / <code>double precision</code></td><td>ponto flutuante (aproximado)</td><td>medições científicas. <strong>Nunca para dinheiro</strong> (0.1 + 0.2 ≠ 0.3).</td></tr>
+<tr><td><code>serial</code> / <code>bigserial</code></td><td>integer/bigint auto-incremento</td><td><strong>id de tabela</strong>: o banco gera solo (<code>1, 2, 3…</code>).</td></tr>
+</table>
+</div>
+<div class="warning"><strong>Armadilha:</strong> <code>numeric</code> é exato, <code>real</code>/<code>double</code> é aproximado. Para preço use <code>numeric(10,2)</code> — com float, <code>59.90</code> pode virar <code>59.900000000000006</code>.</div>
+
+<hr>
+
+<h2>Data, hora e booleano</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo</th><th>Guarda</th><th>Exemplo</th></tr>
+<tr><td><code>date</code></td><td>só a data</td><td><code>'2026-11-24'</code> (nascimento, entrega)</td></tr>
+<tr><td><code>time</code></td><td>só a hora</td><td><code>'14:30:00'</code></td></tr>
+<tr><td><code>timestamp</code></td><td>data + hora, <strong>sem fuso</strong></td><td><code>'2026-11-24 14:30:00'</code></td></tr>
+<tr><td><code>timestamptz</code></td><td>data + hora <strong>com fuso</strong> (recomendado)</td><td><code>'2026-11-24 14:30:00-03'</code> — o servidor converte para UTC</td></tr>
+<tr><td><code>interval</code></td><td>duração</td><td><code>'7 days'</code>, <code>'2 hours 30 minutes'</code></td></tr>
+<tr><td><code>boolean</code></td><td><code>true</code> / <code>false</code></td><td><code>publicado boolean DEFAULT false</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>JSON, UUID e outros</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo</th><th>Guarda</th><th>Quando usar</th></tr>
+<tr><td><code>json</code> / <code>jsonb</code></td><td>documento JSON (jsonb é binário, indexável e mais rápido)</td><td>dados flexíveis (configurações, atributos de produto). Prefira <strong>jsonb</strong>.</td></tr>
+<tr><td><code>uuid</code></td><td>identificador universal <code>'a0eebc99-…'</code></td><td>id público de API (não revela quantos registros existem).</td></tr>
+<tr><td><code>bytea</code></td><td>dados binários</td><td>arquivo pequeno, hash, imagem.</td></tr>
+<tr><td><code>tipo[]</code></td><td>lista do tipo (array)</td><td><code>tags text[]</code> → <code>'{sql,tutorial}'</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Um CREATE TABLE com tudo</h2>
+<pre class="file" data-file="schema.sql">CREATE TABLE produtos (
+  id          serial PRIMARY KEY,          -- inteiro auto-incremento
+  sku         uuid DEFAULT gen_random_uuid(),
+  nome        varchar(100) NOT NULL,
+  descricao   text,
+  preco       numeric(10,2) CHECK (preco &gt;= 0),  -- dinheiro: exato
+  estoque     integer DEFAULT 0,
+  ativo       boolean DEFAULT true,
+  criado_em   timestamptz DEFAULT now(),
+  entrega     date,
+  atributos   jsonb,                       -- ex.: {"cor": "azul", "tamanho": "M"}
+  tags        text[]
+);</pre>
+
+<div class="try" data-goal="CREATE TABLE" data-solucao="CREATE TABLE exemplo (id uuid PRIMARY KEY, nome varchar(100) NOT NULL, preco numeric(10,2), dados jsonb, criado_em timestamp);">
+<p class="try-task"><strong>Missão:</strong> monte uma tabela com vários tipos no simulador: <code>CREATE TABLE exemplo (id uuid PRIMARY KEY, nome varchar(100) NOT NULL, preco numeric(10,2), dados jsonb, criado_em timestamp);</code> — o servidor responde <code>CREATE TABLE</code>.</p>
+</div>
+
+<div class="try" data-goal="PRIMARY KEY" data-solucao="\d exemplo">
+<p class="try-task"><strong>Missão:</strong> confira a tabela criada: <code>\d exemplo</code> — a saída mostra as colunas com <code>PRIMARY KEY</code> no <code>id</code>.</p>
+</div>
+
+<div class="tip"><strong>Próxima aula:</strong> <a href="ref-funcoes.html">Cola de funções</a> — agregação (<code>COUNT/SUM/AVG…</code>), texto (<code>upper</code>, <code>LIKE</code>…) e data (<code>now()</code>, <code>age()</code>…).</div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js?v=1"></script>
+</body>
+</html>

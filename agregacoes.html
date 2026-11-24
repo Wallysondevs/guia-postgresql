@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>COUNT, SUM, AVG, MIN, MAX + GROUP BY + HAVING | Guia PostgreSQL</title>
+<meta name="description" content="Funções de agregação no PostgreSQL: COUNT, SUM, AVG, MIN e MAX resumem várias linhas numa só; GROUP BY agrupa por coluna (estado, status) e HAVING filtra depois de agregar (diferente do WHERE, que filtra antes). Exemplos no psql da ana@notebook no banco loja_aurora com clientes, produtos e pedidos, tabela de referência das funções, erros comuns (aggregate in WHERE, coluna fora do GROUP BY) e missões no simulador.">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<script>try{history.scrollRestoration="manual"}catch(e){}function z(){window.scrollTo(0,0);document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0}window.addEventListener("DOMContentLoaded",z);window.addEventListener("load",z);window.addEventListener("pageshow",z);window.addEventListener("pagehide",function(){window.scrollTo(0,0);document.documentElement.scrollTop=0;});document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a){var h=a.getAttribute("href")||"";if(/[.]html($|[?#])/.test(h)&&a.host===location.host){window.scrollTo(0,0);document.documentElement.scrollTop=0;}}});</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1><span class="hl">Agregações</span>: COUNT, SUM, AVG, MIN, MAX + GROUP BY</h1>
+
+<p class="intro">Até aqui o SELECT listava linhas. Agora vamos <strong>resumir</strong>: quantos pedidos existem? Quanto temos em estoque? Qual o preço médio? As <strong>funções de agregação</strong> transformam várias linhas em um único valor — e o <code>GROUP BY</code> faz isso por grupo (por estado, por status), como totalizar uma planilha por categoria.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li><code>COUNT</code>, <code>SUM</code>, <code>AVG</code>, <code>MIN</code>, <code>MAX</code> — um resumo da tabela inteira;</li>
+  <li><code>GROUP BY</code> — quebrar em grupos e agregar dentro de cada um;</li>
+  <li><code>HAVING</code> — filtrar <em>depois</em> de agregar (o <code>WHERE</code> filtra antes);</li>
+  <li>Agregações combinadas com JOIN (valor de cada pedido);</li>
+  <li>Erros comuns: agregação no WHERE e coluna esquecida no GROUP BY;</li>
+  <li>Praticar no simulador de psql.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>As cinco funções de agregação</h2>
+<p>Num banco de dados, "resumo" é a pergunta mais comum do dia a dia: "quantos?", "quanto?", "qual o maior?". No psql da <code>ana@notebook</code>, no banco <code>loja_aurora</code>:</p>
+<pre class="term">loja_aurora=&gt; SELECT COUNT(*) FROM pedidos;
+ count
+-------
+     3
+(1 row)
+
+loja_aurora=&gt; SELECT SUM(estoque) AS total_estoque FROM produtos;
+ total_estoque
+---------------
+           285
+(1 row)
+
+loja_aurora=&gt; SELECT MIN(preco) AS menor, MAX(preco) AS maior FROM produtos;
+ menor | maior
+-------+-------
+  4.50 | 59.90
+(1 row)
+
+loja_aurora=&gt; SELECT ROUND(AVG(preco), 2) AS media_preco FROM produtos;
+ media_preco
+-------------
+       32.82
+(1 row)</pre>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>O que faz</th><th>Exemplo</th></tr>
+<tr><td><code>COUNT(*)</code></td><td>conta <strong>linhas</strong></td><td><code>COUNT(*) FROM pedidos</code> → 3</td></tr>
+<tr><td><code>COUNT(col)</code></td><td>conta valores <strong>não nulos</strong> da coluna</td><td>difere do <code>*</code> quando há NULL</td></tr>
+<tr><td><code>SUM(col)</code></td><td>soma os valores</td><td><code>SUM(estoque)</code> → 285</td></tr>
+<tr><td><code>AVG(col)</code></td><td>média aritmética</td><td><code>AVG(preco)</code> → 32.82 (com <code>ROUND</code>)</td></tr>
+<tr><td><code>MIN(col)</code> / <code>MAX(col)</code></td><td>menor / maior valor</td><td><code>MIN(preco)</code> → 4.50, <code>MAX(preco)</code> → 59.90</td></tr>
+</table>
+</div>
+<p> pormenor: <code>AVG</code> de coluna <code>numeric</code> sai com várias casas decimais no psql real — é por isso que usamos <code>ROUND(AVG(preco), 2)</code> para deixar bonitinho.</p>
+
+<hr>
+
+<h2>GROUP BY: agregar por grupo</h2>
+<p>Sem <code>GROUP BY</code>, a agregação resume a tabela <strong>inteira</strong> numa linha só. Com <code>GROUP BY</code>, o PostgreSQL quebra as linhas em grupos — uma "caixinha" por estado — e calcula a agregação dentro de cada caixinha:</p>
+<pre class="term">loja_aurora=&gt; SELECT estado, COUNT(*) FROM clientes GROUP BY estado;
+ estado | count
+--------+-------
+ PI     |     3
+ SP     |     1
+ PE     |     1
+(3 rows)</pre>
+<dl class="anatomy">
+  <dt>SELECT estado, COUNT(*)</dt><dd>a coluna do grupo + a função de agregação</dd>
+  <dt>FROM clientes</dt><dd>a "planilha" de origem</dd>
+  <dt>GROUP BY estado</dt><dd>quebra as linhas em grupos pelo estado — cada grupo vira uma linha de saída</dd>
+</dl>
+
+<hr>
+
+<h2>HAVING: filtrar depois de agregar</h2>
+<p>O <code>WHERE</code> filtra <strong>antes</strong> de agregar (linhas individuais); o <code>HAVING</code> filtra <strong>depois</strong> (grupos já calculados). A pergunta "quais estados têm mais de 1 cliente?" só dá para responder com HAVING:</p>
+<pre class="term">loja_aurora=&gt; SELECT estado, COUNT(*) AS total
+             FROM clientes
+             GROUP BY estado
+             HAVING COUNT(*) &gt; 1;
+ estado | total
+--------+-------
+ PI     |     3
+(1 row)</pre>
+<dl class="anatomy">
+  <dt>GROUP BY estado</dt><dd>forma os grupos primeiro</dd>
+  <dt>HAVING COUNT(*) &gt; 1</dt><dd>descarta os grupos cuja contagem não passa no teste — só o PI sobrou</dd>
+</dl>
+
+<div class="warning">
+<strong>Erros comuns na hora de agregar</strong>
+<p>1) Usar agregação no <code>WHERE</code> — o WHERE trabalha com linhas, não com grupos:</p>
+</div>
+<pre class="term">loja_aurora=&gt; SELECT estado, COUNT(*) FROM clientes WHERE COUNT(*) &gt; 1 GROUP BY estado;
+ERROR:  aggregate functions are not allowed in WHERE
+LINE 1: SELECT estado, COUNT(*) FROM clientes WHERE COUNT(*) &gt; 1 GROUP BY estado;
+                                                 ^</pre>
+<div class="warning">
+<p>2) Escrever uma coluna solta e esquecer o <code>GROUP BY</code> — ou a coluna entra no GROUP BY, ou vai dentro de uma agregação:</p>
+</div>
+<pre class="term">loja_aurora=&gt; SELECT estado, COUNT(*) FROM clientes;
+ERROR:  column "clientes.estado" must appear in the GROUP BY clause or be used in an aggregate function
+LINE 1: SELECT estado, COUNT(*) FROM clientes;
+               ^</pre>
+
+<hr>
+
+<h2>Agregando com JOIN: valor de cada pedido</h2>
+<p>Agregação combina lindamente com JOIN (aula anterior). Aqui somamos <code>qtd × preco</code> dos itens dentro de cada pedido:</p>
+<pre class="term">loja_aurora=&gt; SELECT p.id AS pedido, SUM(i.qtd * i.preco) AS total
+             FROM pedidos p
+             JOIN itens_pedido i ON i.pedido_id = p.id
+             GROUP BY p.id
+             ORDER BY p.id;
+ pedido |  total
+--------+----------
+      1 | 133.30
+      2 |  29.90
+      3 |  49.90
+(3 rows)</pre>
+<p>O pedido 1 deu 133.30 porque a Ana levou 2 camisetas (2 × 59.90) + 3 adesivos (3 × 4.50). Repare que <code>p.id</code> entrou no <code>GROUP BY</code> — regra de ouro: <strong>tudo que não é agregação precisa estar no GROUP BY</strong>.</p>
+
+<hr>
+
+<h2>Missões no simulador</h2>
+<p>Abra o terminal e cumpra as missões:</p>
+
+<div class="try" data-goal="3" data-solucao="SELECT COUNT(*) FROM pedidos;">
+<p class="try-task"><strong>Missão 1:</strong> conte os pedidos: <code>SELECT COUNT(*) FROM pedidos;</code> deve mostrar <code>3</code>.</p>
+</div>
+
+<div class="try" data-goal="SP" data-solucao="SELECT estado, COUNT(*) FROM clientes GROUP BY estado;">
+<p class="try-task"><strong>Missão 2:</strong> agrupe os clientes por estado com <code>GROUP BY estado</code> — a saída mostra os grupos <code>PI</code>, <code>SP</code> e <code>PE</code>.</p>
+</div>
+
+<div class="try" data-goal="285" data-solucao="SELECT SUM(estoque) FROM produtos;">
+<p class="try-task"><strong>Missão 3:</strong> some o estoque todo: <code>SELECT SUM(estoque) FROM produtos;</code> deve dar <code>285</code>.</p>
+</div>
+
+<div class="try" data-goal="32.82" data-solucao="SELECT AVG(preco) FROM produtos;">
+<p class="try-task"><strong>Missão 4:</strong> tire a média de preço: <code>SELECT AVG(preco) FROM produtos;</code> deve mostrar <code>32.82</code>.</p>
+</div>
+
+<div class="try" data-goal="PI" data-solucao="SELECT estado, COUNT(*) AS total FROM clientes GROUP BY estado HAVING total &gt; 1;">
+<p class="try-task"><strong>Missão 5:</strong> use <code>HAVING</code> para mostrar só o estado com mais de 1 cliente: <code>SELECT estado, COUNT(*) AS total FROM clientes GROUP BY estado HAVING total &gt; 1;</code> — só o <code>PI</code> sobra.</p>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>COUNT / SUM / AVG / MIN / MAX</code> resumem várias linhas num valor só.</li>
+  <li><code>GROUP BY col</code> calcula a agregação <em>por grupo</em>; tudo que não é agregação precisa estar no GROUP BY.</li>
+  <li><code>WHERE</code> filtra linhas <strong>antes</strong> de agregar; <code>HAVING</code> filtra grupos <strong>depois</strong>.</li>
+  <li>Erros: <code>aggregate functions are not allowed in WHERE</code> e <code>must appear in the GROUP BY clause</code>.</li>
+</ul>
+
+<div class="tip"><strong>Próxima aula:</strong> <a href="subconsultas.html">Subconsultas e CTEs (WITH)</a> — uma consulta dentro da outra, para perguntas como "quais clientes fecam pedido?".</div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js?v=1"></script>
+</body>
+</html>

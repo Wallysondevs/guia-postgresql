@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Projeto 2 — Blog com posts, comentários e tags | Guia PostgreSQL</title>
+<meta name="description" content="Projeto prático de PostgreSQL: monte o banco de um blog — tabelas posts, comentarios, tags e a tabela de ligação post_tags (relação N—N). SQL completo de CREATE TABLE e INSERT, consultas com LEFT JOIN + GROUP BY (posts com número de comentários), busca com LIKE, CREATE VIEW de posts públicos e o erro de tabela inexistente. Missões no psql simulado do banco loja_aurora.">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<script>try{history.scrollRestoration="manual"}catch(e){}function z(){window.scrollTo(0,0);document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0}window.addEventListener("DOMContentLoaded",z);window.addEventListener("load",z);window.addEventListener("pageshow",z);window.addEventListener("pagehide",function(){window.scrollTo(0,0);document.documentElement.scrollTop=0;});document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a){var h=a.getAttribute("href")||"";if(/[.]html($|[?#])/.test(h)&&a.host===location.host){window.scrollTo(0,0);document.documentElement.scrollTop=0;}}});</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Projeto 2 — <span class="hl">blog</span> com posts, comentários e tags</h1>
+
+<p class="intro">Um blog parece simples, mas esconde três relações diferentes: <strong>um post tem vários comentários</strong> (1—N), <strong>um post pode ter várias tags e uma tag aparece em vários posts</strong> (N—N) e <strong>um comentário pertence a um post e a um cliente</strong>. A analogia do arquivo ajuda: posts é uma planilha, comentários é outra — e a tabela de ligação é a ficha que diz "essa ficha vai naquela". Neste projeto a Ana monta tudo isso com SQL completo.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A modelar 1—N (<code>comentarios.post_id REFERENCES posts(id)</code>) e N—N (tabela de ligação <code>post_tags</code>).</li>
+  <li>A consultar com <code>LEFT JOIN</code> + <code>GROUP BY</code>: posts mesmo sem comentário, com <code>COUNT</code>.</li>
+  <li>A buscar texto com <code>LIKE 'A%'</code> e a salvar consultas em <code>CREATE VIEW</code>.</li>
+  <li>O erro <strong>42P01</strong>: consultar uma tabela que não existe.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Passo 1 — o modelo do blog</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tabela</th><th>Guarda</th><th>Ligação</th></tr>
+<tr><td><code>posts</code></td><td>título, conteúdo, data e se está publicado</td><td>—</td></tr>
+<tr><td><code>comentarios</code></td><td>texto do comentário e quem comentou</td><td><code>post_id → posts(id)</code>, <code>cliente_id → clientes(id)</code></td></tr>
+<tr><td><code>tags</code></td><td>nome da tag (ex.: "sql")</td><td><code>nome UNIQUE</code></td></tr>
+<tr><td><code>post_tags</code></td><td>"esse post tem essa tag"</td><td><code>post_id → posts(id)</code> + <code>tag_id → tags(id)</code>, PK composta</td></tr>
+</table>
+</div>
+<div class="warning"><strong>Armadilha clássica N—N:</strong> guardar tags dentro de posts como texto ("sql, banco, tutorial") parece prático, mas aí não dá para consultar "todos os posts da tag sql" sem gambiarra. A tabela de ligação <code>post_tags</code> é a forma certa — cada par (post, tag) vira uma linha.</div>
+
+<hr>
+
+<h2>Passo 2 — criar as tabelas e popular (blog.sql)</h2>
+<pre class="file" data-file="blog.sql">-- blog.sql — roda dentro do banco da aplicação (ex.: \c blog)
+CREATE TABLE posts (
+  id           integer PRIMARY KEY,
+  titulo       text NOT NULL,
+  conteudo     text,
+  publicado    boolean DEFAULT false,
+  criado_em    timestamp DEFAULT now()
+);
+
+CREATE TABLE comentarios (
+  id          integer PRIMARY KEY,
+  post_id     integer REFERENCES posts(id) ON DELETE CASCADE,
+  cliente_id  integer REFERENCES clientes(id),
+  texto       text NOT NULL,
+  criado_em   timestamp DEFAULT now()
+);
+
+CREATE TABLE tags (
+  id    integer PRIMARY KEY,
+  nome  text UNIQUE NOT NULL
+);
+
+CREATE TABLE post_tags (
+  post_id  integer REFERENCES posts(id) ON DELETE CASCADE,
+  tag_id   integer REFERENCES tags(id) ON DELETE CASCADE,
+  PRIMARY KEY (post_id, tag_id)
+);
+
+INSERT INTO posts (id, titulo, conteudo, publicado) VALUES
+  (1, 'Olá, PostgreSQL!', 'Meu primeiro post sobre banco de dados…', true),
+  (2, 'JOINs explicados',   'INNER, LEFT, RIGHT e FULL…',               true),
+  (3, 'Rascunho: índices',  'Ainda não publiquei…',                      false);
+
+INSERT INTO tags (id, nome) VALUES (1, 'sql'), (2, 'tutorial'), (3, 'avancado');
+
+INSERT INTO post_tags (post_id, tag_id) VALUES (1, 1), (1, 2), (2, 1), (2, 3);
+
+INSERT INTO comentarios (id, post_id, cliente_id, texto) VALUES
+  (1, 1, 2, 'Ótimo post, Ana!'),
+  (2, 1, 3, 'Quero a parte 2!'),
+  (3, 2, 1, 'O LEFT JOIN me salvou hoje.');</pre>
+
+<div class="try" data-goal="CREATE TABLE" data-solucao="CREATE TABLE tags (id integer PRIMARY KEY, nome text UNIQUE NOT NULL);">
+<p class="try-task"><strong>Missão 1:</strong> no psql simulado, crie a tabela de tags do blog: <code>CREATE TABLE tags (id integer PRIMARY KEY, nome text UNIQUE NOT NULL);</code> — o servidor responde <code>CREATE TABLE</code>.</p>
+</div>
+
+<div class="try" data-goal="INSERT 0 1" data-solucao="INSERT INTO tags (nome) VALUES ('postgresql');">
+<p class="try-task"><strong>Missão 2:</strong> depois de criada, insira uma tag: <code>INSERT INTO tags (nome) VALUES ('postgresql');</code> — a confirmação é <code>INSERT 0 1</code>.</p>
+</div>
+
+<hr>
+
+<h2>Passo 3 — as consultas do blog</h2>
+
+<h3>Posts publicados com número de comentários (LEFT JOIN + GROUP BY)</h3>
+<p>O <code>LEFT JOIN</code> mantém o post mesmo quando ele <strong>não tem</strong> comentário (o <code>INNER JOIN</code> sumiria com ele):</p>
+<pre class="term">loja_aurora=&gt; SELECT p.titulo, COUNT(c.id) AS comentarios
+FROM posts p LEFT JOIN comentarios c ON c.post_id = p.id
+WHERE p.publicado
+GROUP BY p.titulo ORDER BY p.titulo;
+      titulo      | comentarios
+------------------+-------------
+ JOINs explicados |           1
+ Olá, PostgreSQL! |           2
+(2 rows)</pre>
+
+<h3>Busca de posts pelo título (LIKE)</h3>
+<pre class="term">loja_aurora=&gt; SELECT titulo FROM posts WHERE titulo LIKE '%SQL%';
+      titulo
+------------------
+ Olá, PostgreSQL!
+(1 row)</pre>
+
+<div class="try" data-goal="Ana Souza" data-solucao="SELECT nome FROM clientes WHERE nome LIKE 'A%';">
+<p class="try-task"><strong>Missão:</strong> treine o <code>LIKE</code> com curinga: <code>SELECT nome FROM clientes WHERE nome LIKE 'A%';</code> — a saída traz <code>Ana Souza</code> (todo nome que começa com "A").</p>
+</div>
+
+<h3>Todos os posts com suas tags (dois JOINs)</h3>
+<pre class="term">loja_aurora=&gt; SELECT p.titulo, t.nome AS tag
+FROM posts p
+JOIN post_tags pt ON pt.post_id = p.id
+JOIN tags t       ON t.id = pt.tag_id
+ORDER BY p.titulo, t.nome;
+      titulo      |    tag
+------------------+-----------
+ JOINs explicados | avancado
+ JOINs explicados | sql
+ Olá, PostgreSQL! | sql
+ Olá, PostgreSQL! | tutorial
+(4 rows)</pre>
+
+<hr>
+
+<h2>Passo 4 — view: a consulta salva no banco</h2>
+<p>Se a consulta de "posts publicados" vive repetida no código da aplicação, salve ela como <strong>view</strong> — é uma consulta com nome, que se comporta como uma tabela de leitura:</p>
+<pre class="file" data-file="views.sql">CREATE VIEW posts_publicados AS
+SELECT p.id, p.titulo, p.criado_em, COUNT(c.id) AS comentarios
+FROM posts p LEFT JOIN comentarios c ON c.post_id = p.id
+WHERE p.publicado
+GROUP BY p.id, p.titulo, p.criado_em;</pre>
+<pre class="term">loja_aurora=&gt; SELECT * FROM posts_publicados;
+ id |      titulo      |        criado_em        | comentarios
+----+------------------+-------------------------+-------------
+  1 | Olá, PostgreSQL! | 2026-11-01 10:00:00     |           2
+  2 | JOINs explicados | 2026-11-05 09:30:00     |           1
+(2 rows)</pre>
+
+<div class="try" data-goal="CREATE VIEW" data-solucao="CREATE VIEW v_clientes_pi AS SELECT nome, cidade FROM clientes WHERE estado = 'PI';">
+<p class="try-task"><strong>Missão:</strong> crie uma view no simulador: <code>CREATE VIEW v_clientes_pi AS SELECT nome, cidade FROM clientes WHERE estado = 'PI';</code> — o servidor responde <code>CREATE VIEW</code>.</p>
+</div>
+
+<hr>
+
+<h2>Passo 5 — erro real: consultar o que não existe</h2>
+<div class="warning"><strong>Erro real — 42P01 (undefined_table):</strong> antes de rodar o <code>blog.sql</code>, a tabela <code>comentarios</code> não existe no banco novo:
+<pre class="term">blog=&gt; SELECT * FROM comentarios;
+ERROR:  relation "comentarios" does not exist
+LINE 1: SELECT * FROM comentarios;
+                      ^</pre>
+<strong>Solução:</strong> rode <code>\dt</code> para ver o que existe e <code>\i blog.sql</code> para criar tudo antes de consultar.</div>
+
+<div class="try" data-goal="does not exist" data-solucao="SELECT * FROM comentarios;">
+<p class="try-task"><strong>Missão:</strong> provoque o erro 42P01 no simulador: <code>SELECT * FROM comentarios;</code> — a saída traz <code>relation "comentarios" does not exist</code>.</p>
+</div>
+
+<hr>
+
+<h2>Resumo do projeto</h2>
+<ul>
+  <li>1—N vira <code>REFERENCES</code> na tabela "filha" (<code>comentarios.post_id</code>); N—N vira <strong>tabela de ligação</strong> com PK composta (<code>post_tags</code>).</li>
+  <li><code>LEFT JOIN</code> conta até quem não tem relação (<code>COUNT</code> viria 0); <code>INNER JOIN</code> some com eles.</li>
+  <li><code>LIKE 'A%'</code> busca texto com curinga (<code>%</code> = qualquer texto, <code>_</code> = um caractere).</li>
+  <li><code>CREATE VIEW</code> salva a consulta no banco: depois é só <code>SELECT * FROM nome_da_view;</code>.</li>
+</ul>
+
+<div class="tip"><strong>Próxima aula:</strong> <a href="projeto-reservas.html">Projeto 3 — Sistema de reservas com controle de conflito</a> — transações <code>BEGIN/COMMIT/ROLLBACK</code> para ninguém reservar o mesmo item duas vezes.</div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js?v=1"></script>
+</body>
+</html>

@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EXPLAIN: ler o plano de execução no PostgreSQL | Guia PostgreSQL</title>
+<meta name="description" content="Use EXPLAIN no PostgreSQL para ver o plano de execução das consultas: Seq Scan (lê a tabela inteira) vs Index Scan (vai pelo índice), cost, rows e width, EXPLAIN ANALYZE com BUFFERS (executa de verdade), e partition pruning. Pratique no psql simulado do banco loja_aurora até ver 'Seq Scan on' na saída.">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<script>try{history.scrollRestoration="manual"}catch(e){}function z(){window.scrollTo(0,0);document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0}window.addEventListener("DOMContentLoaded",z);window.addEventListener("load",z);window.addEventListener("pageshow",z);window.addEventListener("pagehide",function(){window.scrollTo(0,0);document.documentElement.scrollTop=0;});document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a){var h=a.getAttribute("href")||"";if(/[.]html($|[?#])/.test(h)&&a.host===location.host){window.scrollTo(0,0);document.documentElement.scrollTop=0;}}});</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1><span class="hl">EXPLAIN</span>: como o PostgreSQL executa sua consulta</h1>
+
+<p class="intro">Antes de dirigir, o GPS traça a <strong>rota</strong>. O <code>EXPLAIN</code> faz isso com a sua consulta: mostra o <em>plano de execução</em> que o PostgreSQL escolheu — se vai ler a tabela inteira (<code>Seq Scan</code>, como folhear a planilha linha a linha) ou pular direto pelo índice (<code>Index Scan</code>, como ir à página certa pelo sumário). Nesta aula: ler esse plano e achar consultas lentas.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li><code>EXPLAIN SELECT …</code> mostra o plano <strong>sem executar</strong> a consulta;</li>
+  <li>Ler <code>Seq Scan</code> vs <code>Index Scan</code>/<code>Bitmap Index Scan</code> e os números <code>cost</code>, <code>rows</code>, <code>width</code>;</li>
+  <li><code>EXPLAIN ANALYZE</code> executa de verdade e mede o tempo real (e <code>BUFFERS</code> mostra os blocos lidos);</li>
+  <li>Por que o planner pode errar a rota sem estatísticas boas (aula de <a href="vacuum-analyze.html">ANALYZE</a>);</li>
+  <li>Praticar no psql simulado até a saída mostrar <code>Seq Scan on</code>.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Seu primeiro plano de execução</h2>
+<p>Coloque <code>EXPLAIN</code> na frente de qualquer <code>SELECT</code> e o PostgreSQL responde com o plano, sem rodar a consulta:</p>
+<pre class="term">loja_aurora=&gt; EXPLAIN SELECT * FROM clientes;
+                        QUERY PLAN
+-----------------------------------------------------------
+ Seq Scan on clientes  (cost=0.00..35.50 rows=2550 width=72)</pre>
+<p>Tradução: <strong>Seq Scan on clientes</strong> = "vou varrer a tabela <code>clientes</code> inteira, linha por linha". <code>cost=0.00..35.50</code> é o custo estimado (o primeiro número é o custo para entregar a primeira linha; o segundo, para entregar todas). <code>rows=2550</code> é a estimativa de linhas que vão sair; <code>width=72</code> é o tamanho médio de cada linha em bytes. <em>No simulador os números são fixos; num banco real eles mudam conforme o tamanho real da tabela — é exatamente o que o <code>ANALYZE</code> atualiza.</em></p>
+
+<div class="try" data-goal="Seq Scan on" data-solucao="EXPLAIN SELECT * FROM clientes;">
+<p class="try-task"><strong>Missão:</strong> digite <code>EXPLAIN SELECT * FROM clientes;</code> no terminal e ache o <code>Seq Scan on clientes</code> no plano — o PostgreSQL vai ler a tabela inteira, sem índice.</p>
+</div>
+
+<hr>
+
+<h2>Seq Scan vs Index Scan: planilha inteira vs sumário</h2>
+<p>Sem índice na coluna do <code>WHERE</code>, o banco não tem escolha: varre tudo (<code>Seq Scan</code>). Com índice, ele consulta o sumário e pula direto (<code>Index Scan</code>):</p>
+<pre class="term">loja_aurora=&gt; CREATE INDEX idx_clientes_estado ON clientes (estado);
+CREATE INDEX
+loja_aurora=&gt; EXPLAIN SELECT * FROM clientes WHERE estado = 'PI';
+                                    QUERY PLAN
+-----------------------------------------------------------------------------------
+ Bitmap Heap Scan on clientes  (cost=4.30..12.50 rows=3 width=72)
+   Recheck Cond: (estado = 'PI'::bpchar)
+   -&gt;  Bitmap Index Scan on idx_clientes_estado  (cost=0.00..4.29 rows=3 width=0)
+         Index Cond: (estado = 'PI'::bpchar)</pre>
+<p>Com poucos registros o planner ainda pode preferir o <code>Seq Scan</code> (ler tudo é mais barato que abrir o índice) — e isso é <strong>certo</strong>: o custo é relativo ao tamanho da tabela. O índice brilha quando a tabela é gigante e o <code>WHERE</code> filtra poucas linhas (isso é o <em>seletividade</em>).</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo de nó</th><th>O que significa</th><th>Quando aparece</th></tr>
+<tr><td><code>Seq Scan</code></td><tdLê a tabela inteira, linha a linha</td><td>Sem índice útil, ou tabela pequena, ou o filtro pega quase tudo</td></tr>
+<tr><td><code>Index Scan</code></td><td>Usa o índice para achar as linhas direto</td><td><code>WHERE</code> em coluna indexada e muito seletiva</td></tr>
+<tr><td><code>Bitmap Index Scan</code> + <code>Bitmap Heap Scan</code></td><td>Índice gera um "mapa de bits" das páginas e lê só elas</td><td>Filtros em várias colunas indexadas</td></tr>
+<tr><td><code>Nested Loop</code> / <code>Hash Join</code> / <code>Merge Join</code></td><td>Como o banco junta duas tabelas (JOIN)</td><td>Consultas com <code>JOIN</code></td></tr>
+<tr><td><code>Sort</code> / <code>Aggregate</code> / <code>Limit</code></td><td>Ordenação, <code>GROUP BY</code>, <code>LIMIT</code> do plano</td><td>Consultas com <code>ORDER BY</code>, agregações, <code>LIMIT</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>EXPLAIN ANALYZE: medir o tempo real (com cuidado!)</h2>
+<p>O <code>EXPLAIN</code> puro só <em>estima</em>. Com <code>ANALYZE</code>, o PostgreSQL <strong>executa a consulta de verdade</strong> e mostra o tempo real por nó — por isso é a ferramenta favorita para achar gargalos:</p>
+<pre class="term">loja_aurora=&gt; EXPLAIN (ANALYZE, BUFFERS) SELECT * FROM pedidos WHERE cliente_id = 1;
+                                                      QUERY PLAN
+-----------------------------------------------------------------------------------------------------------------------
+ Seq Scan on pedidos  (cost=0.00..35.50 rows=2550 width=72) (actual time=0.012..0.045 rows=3 loops=1)
+   Filter: (cliente_id = 1)
+   Rows Removed by Filter: 2547
+   Buffers: shared hit=4
+ Planning Time: 0.080 ms
+ Execution Time: 0.061 ms</pre>
+<dl class="anatomy">
+  <dt>EXPLAIN</dt><dd>Pede o plano de execução em vez do resultado.</dd>
+  <dt>(ANALYZE, BUFFERS)</dt><dd><code>ANALYZE</code> = executa e mede o real; <code>BUFFERS</code> = mostra blocos de disco/memória lidos.</dd>
+  <dt>actual time=… rows=…</dt><dd>Tempo real e linhas reais por nó — compare com a estimativa <code>rows=2550</code>.</dd>
+  <dt>Rows Removed by Filter</dt><dd>Linhas lidas e descartadas — se for muito alto, falta índice.</dd>
+</dl>
+
+<div class="warning">
+<strong>Cuidado:</strong> <code>EXPLAIN ANALYZE</code> <em>executa</em> o comando. Num <code>SELECT</code> tudo bem; num <code>UPDATE</code>/<code>DELETE</code>/<code>INSERT</code> os dados mudam de verdade! Se quiser só medir sem risco, envolva numa transação e desfaça: <code>BEGIN; EXPLAIN ANALYZE UPDATE …; ROLLBACK;</code>
+</div>
+
+<hr>
+
+<h2>Experimente: ache o Seq Scan no simulador</h2>
+
+<div class="try" data-goal="Seq Scan on pedidos" data-solucao="EXPLAIN SELECT * FROM pedidos WHERE cliente_id = 1;">
+<p class="try-task"><strong>Missão:</strong> digite <code>EXPLAIN SELECT * FROM pedidos WHERE cliente_id = 1;</code>. Sem índice em <code>cliente_id</code>, o plano mostra <code>Seq Scan on pedidos</code> — a tabela de pedidos seria varrida inteira para achar os pedidos de um só cliente.</p>
+</div>
+
+<div class="try" data-goal="Seq Scan on produtos" data-solucao="EXPLAIN (ANALYZE) SELECT COUNT(*) FROM produtos;">
+<p class="try-task"><strong>Missão:</strong> agora com análise real: digite <code>EXPLAIN (ANALYZE) SELECT COUNT(*) FROM produtos;</code> e veja o plano com <code>Seq Scan on produtos</code> e a linha de tempo real (<code>actual time</code>).</p>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>EXPLAIN SELECT …</code> mostra o plano sem executar; <code>EXPLAIN (ANALYZE, BUFFERS) …</code> executa e mede o real (cuidado com <code>UPDATE</code>/<code>DELETE</code>).</li>
+  <li><code>Seq Scan</code> = tabela inteira; <code>Index Scan</code>/<code>Bitmap Index Scan</code> = usa índice; o planner escolhe pelo <code>cost</code> estimado.</li>
+  <li>Compare <code>rows</code> (estimado) com <code>actual … rows</code> (real): quando divergem muito, rode <code>ANALYZE</code> na tabela.</li>
+  <li><code>Rows Removed by Filter</code> alto demais = sintoma clássico de falta de índice na coluna do <code>WHERE</code>.</li>
+</ul>
+
+<div class="tip"><strong>Próxima aula:</strong> <a href="vacuum-analyze.html">VACUUM, ANALYZE e autovacuum</a> — as estatísticas que o EXPLAIN usa para traçar a rota vêm do <code>ANALYZE</code>; entenda a "faxina" que mantém o banco saudável.</div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js?v=1"></script>
+</body>
+</html>

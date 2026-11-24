@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tipos de dados do PostgreSQL: texto, número, data, booleano e JSON | Guia PostgreSQL</title>
+<meta name="description" content="Os tipos de dados do PostgreSQL: text e varchar(n) para texto, integer/bigint para inteiros, numeric(10,2) para dinheiro (por que não float: 0.1+0.2 != 0.3), date e timestamp, boolean, jsonb para JSON consultável e serial para id auto-incremento. No simulador: CREATE TABLE teste_tipos com jsonb aparece no \\d teste_tipos e o INSERT devolve INSERT 0 1.">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<script>try{history.scrollRestoration="manual"}catch(e){}function z(){window.scrollTo(0,0);document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0}window.addEventListener("DOMContentLoaded",z);window.addEventListener("load",z);window.addEventListener("pageshow",z);window.addEventListener("pagehide",function(){window.scrollTo(0,0);document.documentElement.scrollTop=0;});document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a){var h=a.getAttribute("href")||"";if(/[.]html($|[?#])/.test(h)&&a.host===location.host){window.scrollTo(0,0);document.documentElement.scrollTop=0;}}});</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1><span class="hl">Tipos de dados</span>: cada campo da ficha tem seu tipo</h1>
+
+<p class="intro">Na planilha <code>clientes</code>, a coluna <code>nome</code> é <code>text</code> e a coluna <code>id</code> é <code>integer</code>. O <strong>tipo</strong> é o rótulo do campo da ficha: ele diz o que pode entrar ali — e o PostgreSQL <strong>rejeita</strong> o que não bate (no campo "data" não entra a palavra "banana"). Nesta aula, os tipos que você mais vai usar.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Texto: <code>text</code>, <code>varchar(n)</code>, <code>char(2)</code>;</li>
+  <li>Números: <code>integer</code>, <code>bigint</code>, <code>numeric(10,2)</code> (dinheiro) e por que <em>não</em> usar <code>float</code> para dinheiro;</li>
+  <li><code>date</code>/<code>timestamp</code>, <code>boolean</code>, <code>jsonb</code> e <code>serial</code>;</li>
+  <li>No simulador: criar <code>teste_tipos</code>, ver a estrutura com <code>\d</code> e inserir uma linha.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Os tipos mais usados</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo</th><th>Guarda</th><th>Exemplo</th></tr>
+<tr><td><code>text</code></td><td>texto de qualquer tamanho</td><td><code>'Ana Souza'</code></td></tr>
+<tr><td><code>varchar(n)</code></td><td>texto com limite de <code>n</code> caracteres</td><td><code>'Ana'</code> em <code>varchar(50)</code></td></tr>
+<tr><td><code>char(2)</code></td><td>texto com tamanho <strong>fixo</strong> (completa com espaços)</td><td><code>'PI'</code> na coluna <code>estado</code></td></tr>
+<tr><td><code>integer</code></td><td>número inteiro (−2 bilhões a +2 bilhões)</td><td><code>42</code></td></tr>
+<tr><td><code>bigint</code></td><td>inteiro gigante</td><td>um número de pedido numa loja grande</td></tr>
+<tr><td><code>numeric(10,2)</code></td><td>número <strong>exato</strong> com 2 casas decimais — dinheiro!</td><td><code>59.90</code></td></tr>
+<tr><td><code>real</code> / <code>double precision</code></td><td>ponto flutuante (aproximado)</td><td><code>3.14</code></td></tr>
+<tr><td><code>date</code></td><td>só a data</td><td><code>'2026-11-24'</code></td></tr>
+<tr><td><code>timestamp</code></td><td>data + hora</td><td><code>'2026-11-24 14:30:00'</code></td></tr>
+<tr><td><code>boolean</code></td><td>verdadeiro ou falso</td><td><code>true</code> / <code>false</code></td></tr>
+<tr><td><code>jsonb</code></td><td>JSON binário, indexável e consultável</td><td><code>'{"tema": "escuro"}'</code></td></tr>
+<tr><td><code>serial</code></td><td><code>integer</code> que aumenta sozinho (1, 2, 3…) — usado em PRIMARY KEY</td><td>o <code>id</code> das suas tabelas</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Dinheiro é numeric, nunca float</h2>
+<p>Parece estranho, mas em ponto flutuante <code>0.1 + 0.2</code> dá <code>0.30000000000000004</code> — erro de arredondamento que, somado em milhões de vendas, vira dinheiro perdido. O <code>numeric(10,2)</code> é <strong>exato</strong>: guarda 10 dígitos no total, 2 depois da vírgula. Regra de bolso: <strong>preço e valor monetário → sempre <code>numeric</code></strong>; medidas científicas (que toleram aproximação) → <code>float</code>.</p>
+
+<hr>
+
+<h2>jsonb: quando a ficha tem campos extras</h2>
+<p>Às vezes uma linha precisa de dados que não têm coluna fixa — as preferências de um cliente, por exemplo. Aí entra o <code>jsonb</code>: um campo que guarda um JSON inteiro (<code>'{"tema": "escuro", "notificacoes": true}'</code>) e ainda permite consultar <em>dentro</em> dele. É o melhor dos dois mundos: a rigidez da planilha + a liberdade do JSON.</p>
+
+<hr>
+
+<h2>Na prática: criando uma tabela de tipos variados</h2>
+<pre class="term" data-title="psql — ana@notebook">loja_aurora=&gt; CREATE TABLE teste_tipos (
+loja_aurora-&gt;   id integer PRIMARY KEY,
+loja_aurora-&gt;   nome text,
+loja_aurora-&gt;   preco numeric(10,2),
+loja_aurora-&gt;   ativo boolean,
+loja_aurora-&gt;   criado_em date,
+loja_aurora-&gt;   dados jsonb
+loja_aurora-&gt; );
+CREATE TABLE
+loja_aurora=&gt; INSERT INTO teste_tipos (nome, preco, ativo, criado_em, dados)
+loja_aurora-&gt; VALUES ('Caneca', 29.90, true, '2026-11-24', '{}');
+INSERT 0 1
+loja_aurora=&gt; \d teste_tipos
+Table "public.teste_tipos"
++-----------+--------------+----------------+
+| Column    | Type         | Modifiers      |
++-----------+--------------+----------------+
+| id        | integer      | PRIMARY KEY    |
+| nome      | text         |                |
+| preco     | numeric(10,2)|                |
+| ativo     | boolean      |                |
+| criado_em | date         |                |
+| dados     | jsonb        |                |
++-----------+--------------+----------------+</pre>
+<p>O <code>\d teste_tipos</code> é o "raio-x" da planilha: mostra cada coluna, seu tipo e suas restrições. Repare que o <code>id</code> não entrou no <code>INSERT</code> — como é <code>PRIMARY KEY</code> (serial), o banco preenche sozinho.</p>
+
+<hr>
+
+<h2>Pratique</h2>
+<div class="try" data-goal="CREATE TABLE" data-solucao="CREATE TABLE teste_tipos (id integer PRIMARY KEY, nome text, preco numeric(10,2), ativo boolean, criado_em date, dados jsonb);">
+<p class="try-task"><strong>Missão:</strong> crie a tabela de teste: <code>CREATE TABLE teste_tipos (id integer PRIMARY KEY, nome text, preco numeric(10,2), ativo boolean, criado_em date, dados jsonb);</code> → <code>CREATE TABLE</code>.</p>
+</div>
+
+<div class="try" data-goal="jsonb" data-solucao="\d teste_tipos">
+<p class="try-task"><strong>Missão:</strong> abra o raio-x da tabela: <code>\d teste_tipos</code>. A saída mostra a coluna <code>dados</code> do tipo <code>jsonb</code>.</p>
+</div>
+
+<div class="try" data-goal="INSERT 0 1" data-solucao="INSERT INTO teste_tipos (nome, preco, ativo, criado_em, dados) VALUES ('Caneca', 29.90, true, '2026-11-24', '{}');">
+<p class="try-task"><strong>Missão:</strong> insira uma linha com vários tipos de uma vez: <code>INSERT INTO teste_tipos (nome, preco, ativo, criado_em, dados) VALUES ('Caneca', 29.90, true, '2026-11-24', '{}');</code> → <code>INSERT 0 1</code>.</p>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Cada coluna tem um <strong>tipo</strong>, e o banco rejeita valor fora do tipo.</li>
+  <li>Texto: <code>text</code> / <code>varchar(n)</code> / <code>char(n)</code> · Inteiro: <code>integer</code>, <code>bigint</code>, <code>serial</code> (auto-incremento).</li>
+  <li><strong>Dinheiro → <code>numeric(10,2)</code></strong> (exato); <code>float</code> é só para medida científica.</li>
+  <li><code>date</code>/<code>timestamp</code>, <code>boolean</code>, <code>jsonb</code> para dados flexíveis.</li>
+  <li><code>\d tabela</code> mostra a estrutura inteira: colunas, tipos e restrições.</li>
+</ul>
+
+<div class="tip"><strong>Próxima aula:</strong> <a href="insert.html">INSERT: inserindo linhas nas tabelas</a> — preencher a ficha nova e arquivar na planilha, com os erros reais de UNIQUE e chave estrangeira.</div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js?v=1"></script>
+</body>
+</html>

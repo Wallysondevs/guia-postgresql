@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Constraints: PRIMARY KEY, FOREIGN KEY, UNIQUE, CHECK e NOT NULL | Guia PostgreSQL</title>
+<meta name="description" content="Constraints no PostgreSQL fazem o banco recusar dados quebrados na hora: PRIMARY KEY (identidade única da linha), UNIQUE (e-mail não repete), NOT NULL, CHECK (preco >= 0) e FOREIGN KEY (pedido só aponta para cliente que existe). Erros reais no psql simulado do banco loja_aurora: duplicate key value e foreign key constraint.">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<script>try{history.scrollRestoration="manual"}catch(e){}function z(){window.scrollTo(0,0);document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0}window.addEventListener("DOMContentLoaded",z);window.addEventListener("load",z);window.addEventListener("pageshow",z);window.addEventListener("pagehide",function(){window.scrollTo(0,0);document.documentElement.scrollTop=0;});document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a){var h=a.getAttribute("href")||"";if(/[.]html($|[?#])/.test(h)&&a.host===location.host){window.scrollTo(0,0);document.documentElement.scrollTop=0;}}});</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1><span class="hl">Constraints</span>: as regras que o banco não deixa quebrar</h1>
+
+<p class="intro">Uma tabela solta é como uma planilha em branco: qualquer pessoa pode escrever qualquer coisa em qualquer célula. Uma <strong>constraint</strong> é a regra impressa na capa dessa planilha que o PostgreSQL <strong>faz valer na hora</strong> — se a regra for quebrada, o comando inteiro é recusado com um erro. É assim que o banco garante que seus dados continuem fazendo sentido.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li><code>PRIMARY KEY</code> — a "digital" da linha: única e obrigatória;</li>
+  <li><code>UNIQUE</code> — o valor não pode repetir (e-mail, CPF);</li>
+  <li><code>NOT NULL</code> — campo obrigatório, não aceita vazio;</li>
+  <li><code>CHECK</code> — regra sobre o valor: <code>preco &gt;= 0</code>;</li>
+  <li><code>FOREIGN KEY</code> — a linha só pode apontar para outra linha que existe;</li>
+  <li>Os erros reais: <code>duplicate key</code> e <code>foreign key constraint</code>.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>O banco loja_aurora já chegou com regras</h2>
+<p>Na máquina <strong>ana@notebook</strong>, o banco <code>loja_aurora</code> foi criado com constraints. O meta-comando <code>\d clientes</code> mostra a regra de cada coluna na coluna <em>Modifiers</em>:</p>
+<pre class="term" data-title="ana@notebook — psql (PostgreSQL 16.4)">loja_aurora=&gt; \d clientes
+              Table "public.clientes"
+  Column   |  Type   |          Modifiers
+-----------+---------+---------------------------
+ id        | integer | PRIMARY KEY
+ nome      | text    | NOT NULL
+ email     | text    | UNIQUE
+ cidade    | text    |
+ estado    | char(2) |
+ criado_em | date    | DEFAULT CURRENT_DATE</pre>
+<p>E a tabela <code>produtos</code> tem uma regra sobre o valor do preço:</p>
+<pre class="term" data-title="ana@notebook — psql (PostgreSQL 16.4)">loja_aurora=&gt; \d produtos
+                Table "public.produtos"
+  Column  |     Type     |         Modifiers
+----------+--------------+-------------------------
+ id       | integer      | PRIMARY KEY
+ nome     | text         | NOT NULL
+ preco    | numeric(10,2)| CHECK (preco &gt;= 0)
+ estoque  | integer      | DEFAULT 0</pre>
+
+<hr>
+
+<h2>PRIMARY KEY: a digital da linha</h2>
+<p>Em uma planilha, duas linhas podem ser iguais — e aí você não sabe de qual está falando. A <strong>PRIMARY KEY (chave primária)</strong> resolve isso: é a coluna que <strong>identifica cada registro</strong>, como o CPF identifica uma pessoa. Por definição ela é <code>UNIQUE</code> (não repete) e <code>NOT NULL</code> (não pode ser vazia):</p>
+<pre class="file" data-file="funcionarios.sql">CREATE TABLE funcionarios (
+  id      integer PRIMARY KEY,            -- a digital da linha
+  nome    text    NOT NULL,               -- obrigatório
+  email   text    UNIQUE,                 -- não pode repetir
+  salario numeric CHECK (salario &gt; 0)   -- só valor positivo
+);</pre>
+<dl class="anatomy">
+  <dt>id</dt><dd>o nome da coluna que vai identificar a linha.</dd>
+  <dt>integer</dt><dd>o tipo da coluna (número inteiro).</dd>
+  <dt>PRIMARY KEY</dt><dd>a regra: essa coluna é única <em>e</em> obrigatória — a identidade da linha.</dd>
+</dl>
+<p>Rodando no psql da <strong>ana@notebook</strong>:</p>
+<pre class="term" data-title="ana@notebook — psql (PostgreSQL 16.4)">loja_aurora=&gt; CREATE TABLE funcionarios (
+loja_aurora(&gt;   id integer PRIMARY KEY,
+loja_aurora(&gt;   nome text NOT NULL,
+loja_aurora(&gt;   email text UNIQUE,
+loja_aurora(&gt;   salario numeric CHECK (salario &gt; 0)
+loja_aurora(&gt; );
+CREATE TABLE</pre>
+
+<div class="try" data-goal="CREATE TABLE" data-solucao="CREATE TABLE funcionarios (id integer PRIMARY KEY, nome text NOT NULL, email text UNIQUE, salario numeric CHECK (salario &gt; 0));">
+<p class="try-task"><strong>Missão:</strong> crie a tabela <code>funcionarios</code> com as quatro regras: <code>PRIMARY KEY</code>, <code>NOT NULL</code>, <code>UNIQUE</code> e <code>CHECK</code>. O psql confirma com <code>CREATE TABLE</code>.</p>
+</div>
+
+<hr>
+
+<h2>UNIQUE: ninguém repete o valor</h2>
+<p>O e-mail do cliente precisa ser único — não dá para ter dois cadastros com o mesmo e-mail. A constraint <code>UNIQUE</code> cria essa regra <em>e</em> um índice por baixo dela (já já veremos índices). Se alguém tentar cadastrar de novo:</p>
+<pre class="term" data-title="ana@notebook — psql (PostgreSQL 16.4)">loja_aurora=&gt; INSERT INTO clientes (nome, email) VALUES ('Ana Duplicada', 'ana@email.com');
+ERROR:  duplicate key value violates unique constraint "clientes_email_key"
+DETAIL:  Key (email)=(ana@email.com) already exists.</pre>
+<div class="warning">
+<strong>Erro real: duplicate key</strong>
+<p>O comando <strong>inteiro é recusado</strong> — nenhuma linha entra na tabela. Repare na mensagem: <code>duplicate key value violates unique constraint</code> diz qual regra foi quebrada, e o <code>DETAIL</code> mostra o valor que já existe. É o banco protegendo sua planilha de cadastros repetidos.</p>
+</div>
+
+<div class="try" data-goal="duplicate key" data-solucao="INSERT INTO clientes (nome, email) VALUES ('Ana Duplicada', 'ana@email.com');">
+<p class="try-task"><strong>Missão:</strong> tente cadastrar outro cliente com o e-mail <code>ana@email.com</code>, que já existe. O psql responde <code>ERROR: duplicate key value violates unique constraint ...</code> e nada é inserido.</p>
+</div>
+
+<hr>
+
+<h2>FOREIGN KEY: só aponta para quem existe</h2>
+<p>A tabela <code>pedidos</code> guarda <code>cliente_id</code> — o número da ficha do cliente que fez o pedido. Essa coluna tem uma <strong>FOREIGN KEY (chave estrangeira)</strong>: <code>REFERENCES clientes(id)</code>. Traduzindo para o dia a dia: <em>"esse número precisa existir na tabela clientes"</em>. Não pode existir pedido de cliente fantasma:</p>
+<pre class="file" data-file="pedidos.sql">CREATE TABLE pedidos (
+  id         integer PRIMARY KEY,
+  cliente_id integer REFERENCES clientes(id),   -- foreign key
+  data       date DEFAULT CURRENT_DATE,
+  status     text DEFAULT 'pendente'
+);</pre>
+<pre class="term" data-title="ana@notebook — psql (PostgreSQL 16.4)">loja_aurora=&gt; INSERT INTO pedidos (cliente_id) VALUES (999);
+ERROR:  insert or update on table "pedidos" violates foreign key constraint "pedidos_cliente_id_fkey"
+DETAIL:  Key (cliente_id)=(999) is not present in table "clientes".</pre>
+<div class="warning">
+<strong>Erro real: foreign key constraint</strong>
+<p>O cliente 999 não existe, então o pedido é recusado: <code>violates foreign key constraint</code>. Essa <strong>integridade referencial</strong> é o que impede o banco de virar um arquivo bagunçado, cheio de pedidos apontando para nada. Dá para completar a regra com <code>ON DELETE CASCADE</code> (apaga os pedidos junto com o cliente) ou <code>ON DELETE RESTRICT</code> (proíbe apagar o cliente enquanto houver pedidos).</p>
+</div>
+
+<div class="try" data-goal="foreign key" data-solucao="INSERT INTO pedidos (cliente_id) VALUES (999);">
+<p class="try-task"><strong>Missão:</strong> insira um pedido para o cliente <code>999</code>, que não existe. O psql bloqueia na hora: <code>ERROR: ... violates foreign key constraint "pedidos_cliente_id_fkey"</code>.</p>
+</div>
+
+<hr>
+
+<h2>CHECK e NOT NULL: regras sobre os valores</h2>
+<p><code>NOT NULL</code> diz que a coluna não pode ficar vazia — o nome do cliente é obrigatório. <code>CHECK (expressão)</code> aceita qualquer regra sobre o valor: na tabela <code>produtos</code>, <code>preco &gt;= 0</code>, ou seja, não existe produto com preço negativo:</p>
+<pre class="term" data-title="ana@notebook — psql (PostgreSQL 16.4)">loja_aurora=&gt; INSERT INTO produtos (nome, preco) VALUES ('Camiseta promo', -5);
+ERROR:  new row for relation "produtos" violates check constraint "produtos_preco_check"
+loja_aurora=&gt; INSERT INTO clientes (nome, email) VALUES (NULL, 'semnome@email.com');
+ERROR:  null value in column "nome" of relation "clientes" violates not-null constraint</pre>
+<p>O <code>CHECK</code> aceita qualquer comparação: <code>estado IN ('PI', 'SP', 'PE')</code>, <code>qtd &gt; 0</code>, <code>email LIKE '%@%'</code> — o que a sua regra de negócio exigir.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Constraint</th><th>O que garante</th><th>Erro ao violar</th></tr>
+<tr><td><code>PRIMARY KEY</code></td><td>coluna única e obrigatória — a identidade da linha</td><td><code>duplicate key</code> / <code>not-null</code></td></tr>
+<tr><td><code>UNIQUE</code></td><td>o valor não repete na tabela</td><td><code>duplicate key value violates unique constraint</code></td></tr>
+<tr><td><code>NOT NULL</code></td><td>a coluna não aceita valor vazio</td><td><code>null value ... violates not-null constraint</code></td></tr>
+<tr><td><code>CHECK (expr)</code></td><td>o valor passa na regra (ex.: <code>preco &gt;= 0</code>)</td><td><code>violates check constraint</code></td></tr>
+<tr><td><code>REFERENCES tabela(col)</code></td><td>o valor existe na outra tabela (FOREIGN KEY)</td><td><code>violates foreign key constraint</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Constraint = regra que o PostgreSQL <strong>faz valer</strong>: se quebrada, o comando inteiro é recusado com erro.</li>
+  <li><code>PRIMARY KEY</code> = <code>UNIQUE</code> + <code>NOT NULL</code> — a digital da linha.</li>
+  <li><code>UNIQUE</code>: valor não repete → erro <code>duplicate key</code>.</li>
+  <li><code>NOT NULL</code>: campo obrigatório. <code>CHECK (expr)</code>: regra sobre o valor.</li>
+  <li><code>FOREIGN KEY ... REFERENCES</code>: só aponta para linha que existe → erro <code>foreign key constraint</code>.</li>
+</ul>
+
+<div class="tip"><strong>Próxima aula:</strong> <a href="indices.html">Índices: quando criar e quando atrapalham</a> — você viu que <code>UNIQUE</code> cria um índice por baixo; agora vamos aprender a criar os nossos.</div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js?v=1"></script>
+</body>
+</html>

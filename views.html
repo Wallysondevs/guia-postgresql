@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Views: consultas salvas com CREATE VIEW | Guia PostgreSQL</title>
+<meta name="description" content="Views no PostgreSQL: CREATE VIEW salva uma consulta com nome e depois você consulta com SELECT * FROM view, como se fosse uma tabela — ideal para simplificar queries com JOIN e esconder colunas sensíveis como e-mail. No psql simulado do banco loja_aurora (ana@notebook), CREATE VIEW responde CREATE VIEW.">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<script>try{history.scrollRestoration="manual"}catch(e){}function z(){window.scrollTo(0,0);document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0}window.addEventListener("DOMContentLoaded",z);window.addEventListener("load",z);window.addEventListener("pageshow",z);window.addEventListener("pagehide",function(){window.scrollTo(0,0);document.documentElement.scrollTop=0;});document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a){var h=a.getAttribute("href")||"";if(/[.]html($|[?#])/.test(h)&&a.host===location.host){window.scrollTo(0,0);document.documentElement.scrollTop=0;}}});</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1><span class="hl">Views</span>: consultas salvas com nome</h1>
+
+<p class="intro">Tem uma consulta que você digita toda hora? Uma <strong>view</strong> é exatamente isso: um <code>SELECT</code> que ganhou <strong>nome e foi salvo no banco</strong> — como dar um apelido para uma fórmula comprida da planilha. Depois você consulta a view <em>como se fosse uma tabela</em>, e nem precisa lembrar do SQL original.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li><code>CREATE VIEW nome AS SELECT ...;</code></li>
+  <li>Consultar a view: <code>SELECT * FROM nome;</code>;</li>
+  <li>View com <code>JOIN</code>;</li>
+  <li><code>CREATE OR REPLACE VIEW</code> e <code>DROP VIEW</code>;</li>
+  <li>Para que serve: simplificar queries e esconder colunas sensíveis (e-mail).</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Criando a primeira view</h2>
+<p>Queremos sempre os clientes do Piauí. Em vez de digitar o <code>WHERE</code> toda vez, salvamos a consulta numa view chamada <code>clientes_pi</code>:</p>
+<pre class="file" data-file="views.sql">CREATE VIEW clientes_pi AS
+SELECT nome, cidade, estado
+FROM clientes
+WHERE estado = 'PI';</pre>
+<dl class="anatomy">
+  <dt>CREATE VIEW clientes_pi</dt><dd>cria a view e dá o nome dela: <code>clientes_pi</code>.</dd>
+  <dt>AS SELECT ...</dt><dd>a consulta que fica salva dentro da view — ela roda toda vez que alguém consultar a view.</dd>
+</dl>
+<pre class="term" data-title="ana@notebook — psql (PostgreSQL 16.4)">loja_aurora=&gt; CREATE VIEW clientes_pi AS SELECT nome, cidade FROM clientes WHERE estado = 'PI';
+CREATE VIEW
+loja_aurora=&gt; SELECT * FROM clientes_pi;
+   nome    |  cidade   | estado
+-----------+-----------+--------
+ Ana Souza | Teresina  | PI
+ Beto Lima | Parnaíba  | PI
+ Eva Nike  | Teresina  | PI
+(3 rows)</pre>
+<p>Viagem no tempo: depois do <code>CREATE VIEW</code>, a consulta virou <code>SELECT * FROM clientes_pi;</code> — curtinha. A view não guarda dados copiados: ela <strong>guarda a consulta</strong> e a executa na hora, sempre mostrando os dados atualizados da tabela.</p>
+<div class="note">
+<strong>No simulador:</strong> o <code>CREATE VIEW</code> responde <code>CREATE VIEW</code> e registra o nome, mas não dá para fazer <code>SELECT</code> em cima da view (ele só conhece tabelas). Para ver as linhas, rode o <code>SELECT</code> original — é exatamente o que a view executaria por baixo.</div>
+
+<div class="try" data-goal="CREATE VIEW" data-solucao="CREATE VIEW clientes_pi AS SELECT nome, cidade FROM clientes WHERE estado = 'PI';">
+<p class="try-task"><strong>Missão:</strong> crie a view <code>clientes_pi</code> com o <code>SELECT</code> dos clientes de <code>'PI'</code>. O psql confirma com <code>CREATE VIEW</code>.</p>
+</div>
+
+<div class="try" data-goal="(3 rows)" data-solucao="SELECT nome, cidade FROM clientes WHERE estado = 'PI';">
+<p class="try-task"><strong>Missão:</strong> veja o que a view <code>clientes_pi</code> mostraria: rode o <code>SELECT</code> original — <code>SELECT nome, cidade FROM clientes WHERE estado = 'PI';</code> — e confira as <code>(3 rows)</code> (Ana Souza, Beto Lima e Eva Nike).</p>
+</div>
+
+<hr>
+
+<h2>View com JOIN</h2>
+<p>Views brilham quando a consulta é grande — com <code>JOIN</code>, então, nem se fala. Quer ver cada pedido junto com o nome do cliente, sem digitar o <code>JOIN</code> toda vez?</p>
+<pre class="file" data-file="views.sql">CREATE VIEW pedidos_resumo AS
+SELECT p.id AS pedido, c.nome AS cliente, p.status
+FROM pedidos p
+JOIN clientes c ON p.cliente_id = c.id;</pre>
+<pre class="term" data-title="ana@notebook — psql (PostgreSQL 16.4)">loja_aurora=&gt; CREATE VIEW pedidos_resumo AS
+loja_aurora(&gt;   SELECT p.id AS pedido, c.nome AS cliente, p.status
+loja_aurora(&gt;   FROM pedidos p JOIN clientes c ON p.cliente_id = c.id;
+CREATE VIEW
+loja_aurora=&gt; SELECT * FROM pedidos_resumo;
+ pedido |  cliente  |  status
+--------+-----------+-----------
+      1 | Ana Souza | entregue
+      2 | Beto Lima | enviado
+      3 | Ana Souza | pendente
+(3 rows)</pre>
+
+<div class="try" data-goal="Ana Souza" data-solucao="SELECT p.id AS pedido, c.nome AS cliente FROM pedidos p JOIN clientes c ON p.cliente_id = c.id;">
+<p class="try-task"><strong>Missão:</strong> confirme o conteúdo da view <code>pedidos_resumo</code>: rode o <code>SELECT</code> com <code>JOIN</code> original — <code>SELECT p.id AS pedido, c.nome AS cliente FROM pedidos p JOIN clientes c ON p.cliente_id = c.id;</code> — e veja <code>Ana Souza</code> nos pedidos 1 e 3.</p>
+</div>
+
+<hr>
+
+<h2>Para que servent as views</h2>
+<ul>
+  <li><strong>Simplificar:</strong> <code>SELECT * FROM clientes_pi;</code> em vez de repetir o <code>SELECT</code> grande com <code>WHERE</code> e <code>JOIN</code>.</li>
+  <li><strong>Segurança:</strong> crie uma view <em>sem</em> a coluna <code>email</code> e dê permissão só nela — quem consulta não vê dados sensíveis da tabela original.</li>
+  <li><strong>Reuso:</strong> mudou a consulta? <code>CREATE OR REPLACE VIEW</code> troca a definição e todas as aplicações acompanham.</li>
+</ul>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>CREATE VIEW v AS SELECT ...;</code></td><td>salva a consulta com o nome <code>v</code></td></tr>
+<tr><td><code>SELECT * FROM v;</code></td><td>consulta a view como se fosse tabela (roda o SELECT salvo na hora)</td></tr>
+<tr><td><code>CREATE OR REPLACE VIEW v AS ...;</code></td><td>troca a definição da view sem precisar apagar</td></tr>
+<tr><td><code>DROP VIEW v;</code></td><td>apaga a view (os dados da tabela original continuam lá)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>View = <code>SELECT</code> salvo com nome no banco: <code>CREATE VIEW v AS SELECT ...;</code></li>
+  <li>Depois você consulta <strong>como tabela</strong>: <code>SELECT * FROM v;</code> — a view não copia dados, roda a consulta na hora.</li>
+  <li>Ótima para simplificar <code>JOIN</code>s e dar acesso só a parte das colunas (segurança).</li>
+  <li><code>CREATE OR REPLACE VIEW</code> altera a definição; <code>DROP VIEW</code> apaga a view.</li>
+</ul>
+
+<div class="tip"><strong>Próxima aula:</strong> <a href="transacoes.html">Transações: BEGIN, COMMIT e ROLLBACK</a> — e se duas operações precisam acontecer juntas (ou nenhuma)? É o pacote "tudo ou nada".</div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js?v=1"></script>
+</body>
+</html>

@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Replicação física e lógica no PostgreSQL | Guia PostgreSQL</title>
+<meta name="description" content="Entenda replicação no PostgreSQL: física (streaming replication via WAL, pg_basebackup, standby só-leitura, promote no failover) e lógica (publicações e assinaturas, CREATE PUBLICATION/SUBSCRIPTION, replicação seletiva de tabelas). Tabela comparativa, comandos reais na máquina ana@notebook e os riscos (réplica não é backup, split-brain).">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<script>try{history.scrollRestoration="manual"}catch(e){}function z(){window.scrollTo(0,0);document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0}window.addEventListener("DOMContentLoaded",z);window.addEventListener("load",z);window.addEventListener("pageshow",z);window.addEventListener("pagehide",function(){window.scrollTo(0,0);document.documentElement.scrollTop=0;});document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a){var h=a.getAttribute("href")||"";if(/[.]html($|[?#])/.test(h)&&a.host===location.host){window.scrollTo(0,0);document.documentElement.scrollTop=0;}}});</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1><span class="hl">Replicação</span>: cópias vivas do banco (física e lógica)</h1>
+
+<p class="intro">Pense no banco <code>loja_aurora</code> como um caderno que vive numa máquina. A <strong>replicação física</strong> é uma fotocopiadora sincronizada: cada página nova é copiada byte a byte para outra máquina (o <em>standby</em>). A <strong>replicação lógica</strong> é um redator que anota cada <code>INSERT</code>/<code>UPDATE</code>/<code>DELETE</code> e envia só o que mudou. Nesta aula: os dois modelos, os comandos reais e os riscos.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Por que replicar: alta disponibilidade (failover), leitura escalada, backup sem bater no principal;</li>
+  <li>Replicação física: <code>wal_level = replica</code>, <code>pg_basebackup</code>, <code>primary_conninfo</code>, standby só-leitura e <code>pg_ctl promote</code>;</li>
+  <li>Replicação lógica: <code>CREATE PUBLICATION</code> / <code>CREATE SUBSCRIPTION</code> e quando ela é melhor;</li>
+  <li>Diferenças práticas entre física e lógica (tabela comparativa);</li>
+  <li>Riscos: réplica <strong>não é backup</strong> (<code>DELETE</code> replica junto) e split-brain em failover mal feito;</li>
+  <li>Praticar no psql simulado do banco <code>loja_aurora</code>.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Replicação física: o standby que copia o WAL</h2>
+<p>No PostgreSQL, toda mudança é gravada antes no <strong>WAL</strong> (write-ahead log — o "diário de rascunho" do banco). A replicação física copia esse diário, registro a registro, para a máquina secundária, que o reaplica continuamente. Resultado: uma cópia quase idêntica, atrasada em milissegundos.</p>
+<p>No servidor <strong>primário</strong>, habilite no <code>postgresql.conf</code>:</p>
+<pre class="file" data-file="/etc/postgresql/16/main/postgresql.conf (primário)">wal_level = replica            # gera WAL suficiente para réplica
+max_wal_senders = 10           # processos que enviam o WAL
+max_replication_slots = 10     # slots de replicação
+listen_addresses = '*'         # ouça na rede (firewall decide quem chega)</pre>
+<p>E crie um usuário só para replicar, com a permissão certa (na aula de <a href="usuarios-permissoes.html">permissões</a> você viu o mínimo privilégio):</p>
+<pre class="term">loja_aurora=&gt; CREATE ROLE replicador WITH LOGIN REPLICATION PASSWORD 'senha-forte';
+CREATE ROLE</pre>
+<p>Na máquina <strong>secundária</strong> (standby), copie a base inteira com o <code>pg_basebackup</code> — é o mesmo comando do backup físico da aula anterior, só que contínuo:</p>
+<pre class="term">$ pg_basebackup -h 10.0.0.5 -p 5432 -U replicador -D /var/lib/postgresql/16/standby -Fp -Xs -R
+# -Fp: formato plain · -Xs: inclui o WAL via streaming · -R: grava primary_conninfo e cria standby.signal</pre>
+<p>Com <code>-R</code>, o standby já nasce configurado para seguir o primário (<code>primary_conninfo</code> no arquivo gerado) e com o arquivo <code>standby.signal</code> — sem ele, a máquina subiria como servidor normal que aceita escrita.</p>
+
+<dl class="anatomy">
+  <dt>pg_basebackup</dt><dd>Copia a base de dados do primário para o standby.</dd>
+  <dt>-h 10.0.0.5</dt><dd>O endereço do servidor primário.</dd>
+  <dt>-U replicador</dt><dd>Usuário com privilégio <code>REPLICATION</code>.</dd>
+  <dt>-D …/standby</dt><dd>Pasta de dados do servidor secundário.</dd>
+  <dt>-Xs -R</dt><dd>WAL por streaming + configura o standby automaticamente.</dd>
+</dl>
+
+<hr>
+
+<h2>Failover: promover o standby a primary</h2>
+<p>Se o primário cair, o standby vira o novo principal com um toque:</p>
+<pre class="term">$ pg_ctl -D /var/lib/postgresql/16/standby promote
+# ou, em serviço systemd: sudo systemctl promote postgresql@16-standby</pre>
+<p>O <code>promote</code> tira o <code>standby.signal</code> e o servidor passa a <strong>aceitar escritas</strong>. Depois, o antigo primário precisa virar standby de novo (reconstrução com <code>pg_rewind</code>) — em produção, ferramentas como <strong>Patroni</strong> ou <strong>repmgr</strong> gerenciam esse failover automático.</p>
+
+<hr>
+
+<h2>Replicação lógica: replicar só o que interessa</h2>
+<p>A replicação lógica copia as <strong>mudanças de dados</strong> (não os bytes do disco), tabela a tabela, como uma assinatura de revista: o primário publica, o assinante recebe. Ideal para replicar só algumas tabelas, migrar entre versões ou alimentar um data warehouse:</p>
+<pre class="term">-- no primário:
+loja_aurora=&gt; CREATE PUBLICATION pub_loja FOR TABLE clientes, pedidos;
+CREATE PUBLICATION
+-- no secundário (outro banco, possivelmente outra máquina):
+loja_aurora_r=&gt; CREATE SUBSCRIPTION sub_loja
+  CONNECTION 'host=10.0.0.5 dbname=loja_aurora user=replicador password=senha-forte'
+  PUBLICATION pub_loja;
+CREATE SUBSCRIPTION</pre>
+<p>Também dá para publicar o banco inteiro: <code>CREATE PUBLICATION tudo FOR ALL TABLES;</code></p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>Replicação física</th><th>Replicação lógica</th></tr>
+<tr><td><strong>O que copia</strong></td><td>WAL (bytes internos) — o banco inteiro, sempre</td><td>Linhas alteradas, tabela a tabela (publicações)</td></tr>
+<tr><td><strong>Granularidade</strong></td><td>Banco inteiro; não escolhe tabela</td><td>Escolhe tabelas, colunas e até linhas (row filters)</td></tr>
+<tr><td><strong>Standby aceita escrita?</strong></td><td>Não (só-leitura até o promote)</td><td>Sim — dá para escrever no assinante</td></tr>
+<tr><td><strong>Entre versões diferentes</strong></td><td>Não funciona</td><td>Funciona (ex.: 15 → 16, para upgrade sem downtime)</td></tr>
+<tr><td><strong>Uso típico</strong></td><td>Alta disponibilidade, failover, escalar leituras</td><td>Replicar parte dos dados, CDC, integração, migrações</td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong>Riscos:</strong> (1) A réplica <strong>não é backup</strong> — um <code>DELETE FROM clientes;</code> no primário chega no standby em milissegundos; mantenha <a href="backup-restore.html">pg_dump</a> além da réplica. (2) Em failover manual, tome cuidado com o <em>split-brain</em>: dois servidores achando que são o primary e aceitando escritas divergentes. Use uma ferramenta de orquestração (Patroni/repmgr) ou um processo claro de promote. (3) O usuário <code>replicador</code> precisa de senha forte e a conexão deve usar <code>sslmode=require</code> (aula de <a href="seguranca.html">segurança</a>).
+</div>
+
+<hr>
+
+<h2>Na prática, no simulador</h2>
+<p>O simulador é um único nó, mas dá para sentir a ideia: os dados que você grava aqui ficariam numa cópia idêntica no standby; e a lista de bancos mostra o que a réplica enxergaria:</p>
+
+<div class="try" data-goal="loja_aurora" data-solucao="\l">
+<p class="try-task"><strong>Missão:</strong> digite <code>\l</code> e veja os bancos disponíveis — numa réplica física, o standby mostraria exatamente esta lista, cópia idêntica do primário.</p>
+</div>
+
+<div class="try" data-goal="INSERT 0 1" data-solucao="INSERT INTO clientes (nome, email) VALUES ('Replica Teste', 'replica@email.com');">
+<p class="try-task"><strong>Missão:</strong> grave uma linha nova: <code>INSERT INTO clientes (nome, email) VALUES ('Replica Teste', 'replica@email.com');</code>. No primário real, esse <code>INSERT 0 1</code> entraria no WAL e chegaria no standby em instantes.</p>
+</div>
+
+<div class="try" data-goal="Ana Souza" data-solucao="SELECT * FROM clientes LIMIT 3;">
+<p class="try-task"><strong>Missão:</strong> rode <code>SELECT * FROM clientes LIMIT 3;</code> e veja <code>Ana Souza</code> — no standby, a mesma consulta retornaria as mesmas linhas, uma cópia idêntica do primário.</p>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Replicação física = copiar o WAL para o standby (<code>wal_level=replica</code>, <code>pg_basebackup -Xs -R</code>); standby é só-leitura até o <code>promote</code>.</li>
+  <li>Replicação lógica = <code>CREATE PUBLICATION</code> / <code>CREATE SUBSCRIPTION</code>; replica tabelas escolhidas e aceita escrita no destino.</li>
+  <li>Use física para HA/failover e escalar leituras; use lógica para CDC, migrações entre versões e cópias parciais.</li>
+  <li>Riscos: réplica não é backup; split-brain em failover manual; proteja a conexão de replicação com SSL e senha forte.</li>
+</ul>
+
+<div class="tip"><strong>Próxima aula:</strong> <a href="explain.html">EXPLAIN: ler o plano de execução</a> — agora que o banco está seguro e replicado, aprenda a ver <em>como</em> o PostgreSQL executa suas consultas e por que às vezes fica lento.</div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js?v=1"></script>
+</body>
+</html>

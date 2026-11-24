@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cola de meta-comandos do psql — \l \dt \d \c \du \q | Guia PostgreSQL</title>
+<meta name="description" content="Cola de consulta rápida dos meta-comandos do psql: \l lista bancos, \dt lista tabelas, \d TABELA descreve a estrutura (colunas, tipos, constraints), \d+ mais detalhes, \c BANCO conecta em outro banco, \du lista usuários/roles, \? ajuda, \q sai, \x formata a saída, \i roda um arquivo .sql. Exemplos reais no banco loja_aurora com missões no psql simulado.">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<script>try{history.scrollRestoration="manual"}catch(e){}function z(){window.scrollTo(0,0);document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0}window.addEventListener("DOMContentLoaded",z);window.addEventListener("load",z);window.addEventListener("pageshow",z);window.addEventListener("pagehide",function(){window.scrollTo(0,0);document.documentElement.scrollTop=0;});document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a){var h=a.getAttribute("href")||"";if(/[.]html($|[?#])/.test(h)&&a.host===location.host){window.scrollTo(0,0);document.documentElement.scrollTop=0;}}});</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Cola dos <span class="hl">meta-comandos</span> do psql</h1>
+
+<p class="intro">Tudo que começa com <code>\</code> no psql é <strong>meta-comando</strong>: quem interpreta é o próprio psql (o cliente), não o servidor — por isso funcionam até sem banco nenhum. É a "chave de fenda" do dia a dia: listar bancos, ver tabelas, descrever estrutura, trocar de banco, sair. Esta é a cola deles.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li><code>\l</code> lista bancos · <code>\dt</code> lista tabelas · <code>\d tabela</code> descreve a tabela.</li>
+  <li><code>\c banco</code> troca de banco sem sair · <code>\du</code> lista usuários · <code>\q</code> sai.</li>
+  <li><code>\?</code> mostra a ajuda completa · <code>\x</code> liga saída expandida · <code>\i arquivo.sql</code> roda um script.</li>
+</ul>
+</div>
+
+<dl class="anatomy">
+  <dt>\d</dt><dd>o meta-comando "descreva" (describe)</dd>
+  <dt>clientes</dt><dd>o argumento: a tabela que você quer inspecionar</dd>
+</dl>
+
+<hr>
+
+<h2>A tabela dos meta-comandos mais usados</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th><th>Exemplo de saída</th></tr>
+<tr><td><code>\l</code> / <code>\list</code></td><td>lista todos os bancos do servidor</td><td>tabela Name / Owner com <code>postgres</code>, <code>loja_aurora</code>…</td></tr>
+<tr><td><code>\dt</code></td><td>lista as tabelas do banco atual</td><td><code>clientes</code>, <code>produtos</code>, <code>pedidos</code>, <code>itens_pedido</code></td></tr>
+<tr><td><code>\d nome</code></td><td>descreve a estrutura: colunas, tipos e constraints</td><td><code>Table "public.clientes"</code> + colunas com <code>PRIMARY KEY</code>, <code>UNIQUE</code>…</td></tr>
+<tr><td><code>\d+ nome</code></td><td>idem, com detalhes extras (tamanho, índices)</td><td>mesma tabela + bloco de índices</td></tr>
+<tr><td><code>\c banco</code></td><td>conecta em outro banco sem sair do psql</td><td><code>You are now connected to database "postgres" as user "ana".</code></td></tr>
+<tr><td><code>\du</code></td><td>lista os usuários (roles) do servidor</td><td><code>postgres (superuser)</code>, <code>ana</code>…</td></tr>
+<tr><td><code>\q</code></td><td>sai do psql (o <code>Ctrl</code>+<code>D</code> também)</td><td>volta para o shell: <code>ana@notebook:~$</code></td></tr>
+<tr><td><code>\?</code></td><td>ajuda de todos os meta-comandos</td><td>lista completa com descrições</td></tr>
+<tr><td><code>\x</code></td><td>liga/desliga saída expandida (uma coluna por linha)</td><td>útil para linhas largas</td></tr>
+<tr><td><code>\i arquivo.sql</code></td><td>executa um script SQL do disco</td><td>roda <code>schema.sql</code> inteiro</td></tr>
+<tr><td><code>\timing on</code></td><td>mostra o tempo de cada comando</td><td><code>Time: 0.845 ms</code> após cada saída</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Uma sessão típica no psql</h2>
+<pre class="term">loja_aurora=&gt; \l
+                                  List of databases
+   Name    |  Owner   | Encoding |   Collate   |    Ctype    |   Access privileges
+-----------+----------+----------+-------------+-------------+-----------------------
+ loja_aurora | ana    | UTF8     | pt_BR.UTF-8 | pt_BR.UTF-8 |
+ postgres  | postgres | UTF8     | pt_BR.UTF-8 | pt_BR.UTF-8 |
+(2 rows)
+
+loja_aurora=&gt; \dt
+            List of relations
+ Schema |    Name    | Type  | Owner
+--------+------------+-------+-------
+ public | clientes   | table | ana
+ public | itens_pedido | table | ana
+ public | pedidos    | table | ana
+ public | produtos   | table | ana
+(4 rows)
+
+loja_aurora=&gt; \d produtos
+                      Table "public.produtos"
+  Column  |     Type     |       Modifiers
+----------+--------------+------------------
+ id       | integer      | not null
+ nome     | text         | not null
+ preco    | numeric(10,2)| check (preco &gt;= 0)
+ estoque  | integer      | default 0
+
+loja_aurora=&gt; \du
+                                   List of roles
+ Role name |                         Attributes
+-----------+------------------------------------------------------------
+ ana       | Create DB
+ postgres  | Superuser, Create role, Create DB
+
+loja_aurora=&gt; \c postgres
+You are now connected to database "postgres" as user "ana".
+postgres=&gt; \q
+ana@notebook:~$</pre>
+
+<hr>
+
+<h2>Experimente os meta-comandos no simulador</h2>
+
+<div class="try" data-goal="itens_pedido" data-solucao="\dt">
+<p class="try-task"><strong>Missão 1 — \dt:</strong> liste as tabelas: <code>\dt</code> — a saída mostra <code>itens_pedido</code> entre as quatro.</p>
+</div>
+
+<div class="try" data-goal="postgres" data-solucao="\l">
+<p class="try-task"><strong>Missão 2 — \l:</strong> liste os bancos: <code>\l</code> — a saída inclui o banco <code>postgres</code>.</p>
+</div>
+
+<div class="try" data-goal="PRIMARY KEY" data-solucao="\d clientes">
+<p class="try-task"><strong>Missão 3 — \d:</strong> descreva a tabela: <code>\d clientes</code> — a saída mostra as colunas com <code>PRIMARY KEY</code> e <code>UNIQUE</code>.</p>
+</div>
+
+<div class="try" data-goal="superuser" data-solucao="\du">
+<p class="try-task"><strong>Missão 4 — \du:</strong> liste os usuários: <code>\du</code> — a saída mostra <code>postgres</code> como <code>superuser</code>.</p>
+</div>
+
+<div class="try" data-goal="connected to database" data-solucao="\c postgres">
+<p class="try-task"><strong>Missão 5 — \c:</strong> troque de banco: <code>\c postgres</code> — a saída diz <code>You are now connected to database "postgres"</code>. (Depois volte com <code>\c loja_aurora</code>.)</p>
+</div>
+
+<div class="try" data-goal="does not exist" data-solucao="\c banco_fantasma">
+<p class="try-task"><strong>Missão 6 — \c com banco errado:</strong> <code>\c banco_fantasma</code> — o psql responde <code>FATAL:  database "banco_fantasma" does not exist</code>.</p>
+</div>
+
+<div class="tip"><strong>Próxima aula:</strong> <a href="ref-tipos.html">Cola de tipos de dados</a> — text, varchar, integer, numeric, boolean, date, timestamp, jsonb, uuid e quando usar cada um.</div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js?v=1"></script>
+</body>
+</html>

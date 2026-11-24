@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Seu primeiro psql: conectar, listar bancos e sair | Guia PostgreSQL</title>
+<meta name="description" content="Como usar o psql, o cliente de terminal do PostgreSQL: psql -U postgres para entrar, \\l para listar bancos, \\c banco para trocar de banco, \\dt para ver tabelas e \\q para sair. O prompt loja_aurora=> mostra onde você está. No simulador: \\c postgres + \\dt mostra \"Did not find any relations\" porque o banco postgres está vazio.">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<script>try{history.scrollRestoration="manual"}catch(e){}function z(){window.scrollTo(0,0);document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0}window.addEventListener("DOMContentLoaded",z);window.addEventListener("load",z);window.addEventListener("pageshow",z);window.addEventListener("pagehide",function(){window.scrollTo(0,0);document.documentElement.scrollTop=0;});document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a){var h=a.getAttribute("href")||"";if(/[.]html($|[?#])/.test(h)&&a.host===location.host){window.scrollTo(0,0);document.documentElement.scrollTop=0;}}});</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1><span class="hl">Seu primeiro psql</span>: conectar, bancos e sair</h1>
+
+<p class="intro">O <strong>psql é o cliente de terminal</strong> do PostgreSQL — a janelinha onde você conversa com o arquivista. Nesta aula você entra, lista os bancos, troca de banco, olha as tabelas e sai. Tudo isso na máquina fictícia <code>ana@notebook</code>, que já tem o PostgreSQL 16 rodando com o banco <code>loja_aurora</code>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Entrar no psql: <code>psql -U postgres</code> ou direto no banco com <code>psql -U ana -d loja_aurora</code>;</li>
+  <li>Ler o prompt: <code>loja_aurora=&gt;</code> diz em qual banco você está;</li>
+  <li><code>\l</code> lista os bancos, <code>\c banco</code> troca de banco, <code>\dt</code> lista as tabelas;</li>
+  <li>Banco vazio: <code>\dt</code> responde <code>Did not find any relations.</code>;</li>
+  <li><code>\q</code> sai de volta para o shell;</li>
+  <li>Praticar tudo isso no simulador desta página.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Entrando e lendo o prompt</h2>
+<p>Para entrar no psql você diz o usuário (<code>-U</code>) e, se quiser, o banco (<code>-d</code>):</p>
+<pre class="term">$ psql -U ana -d loja_aurora   <span class="t-a">← -U ana (usuário), -d loja_aurora (banco)</span>
+psql (16.4)
+Type "help" for help.
+
+loja_aurora=&gt;</pre>
+<p>O <strong>prompt</strong> é a parte antes do cursor: <code>loja_aurora=&gt;</code> diz <em>"você está conectado no banco loja_aurora, como usuário normal"</em>. Se você entra como superusuário, o prompt termina em <code>#</code> (<code>postgres=#</code>) — um aviso visual de que seus comandos são poderosos.</p>
+
+<hr>
+
+<h2>\l, \c e \dt: passeando pelos bancos</h2>
+<pre class="term" data-title="psql — ana@notebook">$ psql -U ana -d loja_aurora
+psql (16.4)
+
+loja_aurora=&gt; \l
++--------------+--------------+
+| Name         | Owner        |
++--------------+--------------+
+| postgres     | ana          |
+| loja_aurora  | ana          |
++--------------+--------------+
+(2 rows)
+
+loja_aurora=&gt; \c postgres
+You are now connected to database "postgres" as user "ana".
+
+postgres=&gt; \dt
+Did not find any relations.
+
+postgres=&gt; \c loja_aurora
+You are now connected to database "loja_aurora" as user "ana".
+
+loja_aurora=&gt; \dt
++--------------+--------------+
+| Name         | Owner        |
++--------------+--------------+
+| clientes     | ana          |
+| produtos     | ana          |
+| pedidos      | ana          |
+| itens_pedido | ana          |
++--------------+--------------+
+(4 rows)
+
+loja_aurora=&gt; \q
+$</pre>
+<p>Três meta-comandos fazem o passeio:</p>
+<dl class="anatomy">
+  <dt>\l</dt><dd>lista os bancos do servidor (pense: "quais arquivos eu tenho?")</dd>
+  <dt>\c postgres</dt><dd>troca para outro banco — o prompt muda na hora (viu? virou <code>postgres=&gt;</code>)</dd>
+  <dt>\dt</dt><dd>lista as tabelas do banco atual ("quais planilhas tem nesse arquivo?")</dd>
+</dl>
+<p>Repare: no banco <code>postgres</code> o <code>\dt</code> disse <code>Did not find any relations.</code> — banco novo é arquivo vazio, sem planilha nenhuma. Já o <code>loja_aurora</code> tem as 4 planilhas da loja.</p>
+
+<hr>
+
+<h2>Meta-comando não é SQL</h2>
+<p>Tudo que começa com <code>\</code> é <strong>meta-comando do psql</strong> — o próprio cliente interpreta, e ele <strong>não precisa de ponto-e-vírgula</strong>. SQL de verdade (como <code>SELECT</code>) precisa do <code>;</code> para executar. Se você digitar <code>\c</code> com <code>;</code> no final, o psql reclama: meta-comando não leva <code>;</code>.</p>
+
+<dl class="anatomy">
+  <dt>\c</dt><dd>"connect": o comando de troca de banco</dd>
+  <dt>loja_aurora</dt><dd>o argumento: o nome do banco para onde você vai</dd>
+</dl>
+
+<hr>
+
+<h2>Erros comuns de primeira vez</h2>
+<pre class="term" data-title="psql — ana@notebook">loja_aurora=&gt; \c nao_existe
+FATAL:  database "nao_existe" does not exist
+loja_aurora=&gt; \q</pre>
+<p>Conectar em banco que não existe dá <code>FATAL</code> e o psql fecha — cheque o nome com <code>\l</code> antes. E para sair, <code>\q</code> (ou <kbd>Ctrl</kbd>+<kbd>D</kbd>) devolve você ao shell, onde o prompt vira <code>$</code> de novo.</p>
+
+<hr>
+
+<h2>Pratique</h2>
+<div class="try" data-goal="itens_pedido" data-solucao="\dt">
+<p class="try-task"><strong>Missão:</strong> rode <code>\dt</code> e veja as 4 tabelas do banco <code>loja_aurora</code> (a última é <code>itens_pedido</code>).</p>
+</div>
+
+<div class="try" data-goal="(2 rows)" data-solucao="\l">
+<p class="try-task"><strong>Missão:</strong> rode <code>\l</code> e confira os 2 bancos do servidor: <code>postgres</code> e <code>loja_aurora</code>.</p>
+</div>
+
+<div class="try" data-goal="Did not find any relations" data-solucao="\c postgres">
+<p class="try-task"><strong>Missão:</strong> rode <code>\c postgres</code> e depois <code>\dt</code> — o banco <code>postgres</code> está vazio (<code>Did not find any relations.</code>). Volte com <code>\c loja_aurora</code>.</p>
+</div>
+
+<div class="try" data-goal="encerrado" data-solucao="\q">
+<p class="try-task"><strong>Missão:</strong> rode <code>\q</code> para sair do psql (no simulador, a mensagem diz que o psql foi encerrado — use o botão Reiniciar para continuar).</p>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Entrar: <code>psql -U ana -d loja_aurora</code>; o prompt <code>loja_aurora=&gt;</code> mostra o banco atual (<code>#</code> = superusuário).</li>
+  <li><code>\l</code> lista bancos · <code>\c banco</code> troca de banco · <code>\dt</code> lista tabelas · <code>\q</code> sai.</li>
+  <li>Meta-comandos (<code>\...</code>) são do psql, não vão ao servidor e não levam <code>;</code>.</li>
+  <li>Banco vazio: <code>\dt</code> → <code>Did not find any relations.</code>; banco inexistente: <code>FATAL: database "x" does not exist</code>.</li>
+</ul>
+
+<div class="tip"><strong>Próxima aula:</strong> <a href="banco-e-tabelas.html">CREATE DATABASE e CREATE TABLE</a> — criar o arquivo (banco) e a primeira planilha (tabela) da loja.</div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js?v=1"></script>
+</body>
+</html>

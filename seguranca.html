@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SSL, pg_hba.conf e boas práticas de segurança | Guia PostgreSQL</title>
+<meta name="description" content="Segurança do PostgreSQL na prática: o arquivo pg_hba.conf (a 'portaria' que define quem entra, de onde e como autentica — trust, peer, scram-sha-256), conexões criptografadas com SSL (sslmode=require, ssl=on), certificados, senhas fortes e por que a porta 5432 não deve ficar exposta na internet. Com exemplos reais na máquina ana@notebook.">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<script>try{history.scrollRestoration="manual"}catch(e){}function z(){window.scrollTo(0,0);document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0}window.addEventListener("DOMContentLoaded",z);window.addEventListener("load",z);window.addEventListener("pageshow",z);window.addEventListener("pagehide",function(){window.scrollTo(0,0);document.documentElement.scrollTop=0;});document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a){var h=a.getAttribute("href")||"";if(/[.]html($|[?#])/.test(h)&&a.host===location.host){window.scrollTo(0,0);document.documentElement.scrollTop=0;}}});</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1><span class="hl">Segurança</span>: SSL, pg_hba.conf e boas práticas</h1>
+
+<p class="intro">Se o banco <code>loja_aurora</code> é um prédio, o arquivo <code>pg_hba.conf</code> é a <strong>portaria</strong>: cada linha diz quem pode entrar, vindo de onde, e como prova quem é (senha, certificado). E o <strong>SSL</strong> é o túnel blindado na calçada — sem ele, a senha viaja legível pela rede. Nesta aula: ler o pg_hba.conf, exigir criptografia e fechar as portas.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como o <code>pg_hba.conf</code> decide cada conexão (tipo, banco, usuário, IP, método) e a ordem das linhas;</li>
+  <li>Métodos de autenticação: <code>trust</code>, <code>peer</code>, <code>scram-sha-256</code>, <code>cert</code> — e quando cada um faz sentido;</li>
+  <li>Ativar SSL no servidor (<code>ssl = on</code>) e exigir na conexão (<code>sslmode=require</code>);</li>
+  <li>Erros reais de acesso negado: <code>FATAL: no pg_hba.conf entry…</code> e <code>password authentication failed</code>;</li>
+  <li>Boas práticas: menor privilégio (aula anterior), senhas fortes, porta 5432 longe da internet, atualizações;</li>
+  <li>Praticar no psql simulado: tentar conectar num banco que não existe e listar os bancos visíveis.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>pg_hba.conf: a portaria do banco</h2>
+<p>O arquivo <code>pg_hba.conf</code> (hba = <em>host-based authentication</em>) fica em <code>/etc/postgresql/16/main/</code> e é lido <strong>de cima para baixo</strong>: a primeira linha que casar com a conexão vale. Cada linha tem 5 campos:</p>
+<pre class="file" data-file="/etc/postgresql/16/main/pg_hba.conf"># TIPO   BANCO        USUÁRIO      ENDEREÇO          MÉTODO
+local    all          postgres     peer
+local    all          all          peer
+host     all          all          127.0.0.1/32      scram-sha-256
+host     all          all          ::1/128           scram-sha-256
+hostssl  loja_aurora  app          0.0.0.0/0         scram-sha-256
+host     loja_aurora  all          10.0.0.0/8        reject</pre>
+<dl class="anatomy">
+  <dt>hostssl</dt><dd>Só vale se a conexão usar <strong>SSL</strong> (criptografada) — o túnel blindado é obrigatório.</dd>
+  <dt>loja_aurora</dt><dd>O banco que essa regra cobre (ou <code>all</code>).</dd>
+  <dt>app</dt><dd>O usuário permitido nessa regra.</dd>
+  <dt>0.0.0.0/0</dt><dd>Qualquer IP da internet (máscara de rede) — restrinja ao IP do servidor da aplicação!</dd>
+  <dt>scram-sha-256</dt><dd>Método de autenticação: senha com hash moderno (nunca <code>md5</code> hoje em dia).</dd>
+</dl>
+<p>Depois de editar o arquivo, aplique sem derrubar as conexões: <code>SELECT pg_reload_conf();</code> no psql (ou <code>$ sudo systemctl reload postgresql</code> no terminal).</p>
+
+<hr>
+
+<h2>Métodos de autenticação: da portaria aberta ao certificado</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Método</th><th>Como funciona</th><th>Quando usar</th></tr>
+<tr><td><code>trust</code></td><td>Entra sem senha nenhuma</td><td><strong>Nunca</strong> em rede; só em teste local</td></tr>
+<tr><td><code>peer</code></td><td>Confere se o usuário do sistema operacional é o mesmo do banco</td><td>Conexões locais no próprio servidor (<code>local</code>)</td></tr>
+<tr><td><code>password</code> / <code>md5</code></td><td>Senha pela rede (md5 hoje é considerado fraco)</td><td>Evite; prefira scram</td></tr>
+<tr><td><code>scram-sha-256</code></td><td>Senha com troca criptografada moderna (padrão atual)</td><td>O padrão para produção</td></tr>
+<tr><td><code>cert</code></td><td>Autentica com certificado do cliente (mTLS)</td><td>Máquinas confiáveis, automação, zero senhas na rede</td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong>Perigo clássica:</strong> uma linha <code>host all all 0.0.0.0/0 trust</code> significa "qualquer pessoa de qualquer lugar entra como qualquer usuário sem senha". É a porta do prédio escancarada. Se a conexão não casar com nenhuma linha, o erro é direto: <code>FATAL: no pg_hba.conf entry for host "…", user "…", database "…"</code>. E se a senha estiver errada: <code>FATAL: password authentication failed for user "ana"</code>.
+</div>
+
+<hr>
+
+<h2>SSL: criptografar a conexão até o servidor</h2>
+<p>Sem SSL, tudo que você digita no psql — inclusive a senha — trafega legível pela rede (alguém com um sniffer na mesma rede lê tudo). No servidor, ligue o SSL em <code>postgresql.conf</code> e aponte os certificados:</p>
+<pre class="file" data-file="/etc/postgresql/16/main/postgresql.conf">ssl = on
+ssl_cert_file = '/etc/ssl/certs/ssl-cert-snakeoil.pem'
+ssl_key_file  = '/etc/ssl/private/ssl-cert-snakeoil.key'
+# para produção, gere certificados reais (Let's Encrypt / CA interna),
+# com permissão 0600 no arquivo da chave</pre>
+<p>Do lado do cliente, o psql escolhe o modo com <code>sslmode</code>. Na máquina da Ana, conectando no banco por SSL:</p>
+<pre class="term">$ psql "host=notebook dbname=loja_aurora user=ana sslmode=require"
+Senha para o usuário ana: ************
+psql (16.4)
+SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384)
+loja_aurora=&gt; \conninfo
+You are connected to database "loja_aurora" as user "ana" on host "notebook" (address "10.0.0.5") at port "5432" via SSL.</pre>
+<div class="table-wrap">
+<table class="ref">
+<tr><th><code>sslmode</code></th><th>Comportamento</th><th>Uso</th></tr>
+<tr><td><code>disable</code></td><td>Nunca usa SSL</td><td>Só teste local</td></tr>
+<tr><td><code>allow</code> / <code>prefer</code></td><td>Tenta SSL se o servidor aceitar</td><td>Compatibilidade</td></tr>
+<tr><td><code>require</code></td><td>Exige SSL, mas não valida o certificado</td><td>Padrão seguro mínimo</td></tr>
+<tr><td><code>verify-ca</code> / <code>verify-full</code></td><td>Exige SSL <em>e</em> valida o certificado do servidor</td><td>Produção — protege contra servidor falso (MITM)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Boas práticas que fecham o prédio</h2>
+<ul>
+  <li><strong>Menor privilégio</strong>: a aplicação entra com um usuário só dela, com <code>GRANT</code> mínimo (veja <a href="usuarios-permissoes.html">usuários e permissões</a>); o superuser <code>postgres</code> só entra localmente, via <code>peer</code>.</li>
+  <li><strong>Senhas fortes</strong> e trocadas: no psql, <code>ALTER USER app WITH PASSWORD '…'</code>; considere <code>pgcrypto</code> para guardar senhas dos seus usuários com hash.</li>
+  <li><strong>Não exponha a 5432 na internet</strong>: deixe o banco atrás de firewall/VPN; o pg_hba.conf deve listar só os IPs dos servidores de aplicação.</li>
+  <li><strong>Atualize o PostgreSQL</strong>: versões velhas têm vulnerabilidades públicas — aplique os minor releases.</li>
+  <li><strong>Logue acessos</strong>: <code>log_connections = on</code> e <code>log_disconnections = on</code> em <code>postgresql.conf</code> para saber quem entrou e quando.</li>
+  <li><strong>Separe ambientes</strong>: banco de teste nunca aponta para o de produção.</li>
+</ul>
+
+<div class="try" data-goal="does not exist" data-solucao="\c banco_secreto">
+<p class="try-task"><strong>Missão:</strong> no simulador, tente entrar num banco que não existe para você: digite <code>\c banco_secreto</code>. A "portaria" barra na hora com <code>FATAL: database "banco_secreto" does not exist</code> — em um servidor real, um banco sem <code>GRANT CONNECT</code> daria <code>permission denied</code>.</p>
+</div>
+
+<div class="try" data-goal="loja_aurora" data-solucao="\l">
+<p class="try-task"><strong>Missão:</strong> digite <code>\l</code> para listar os bancos aos quais você tem acesso. Só <code>loja_aurora</code> (e <code>postgres</code>) aparecem — usuário comum não vê o prédio inteiro, só o que a portaria deixa.</p>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>pg_hba.conf</code> decide cada conexão: tipo (<code>local</code>/<code>host</code>/<code>hostssl</code>), banco, usuário, IP e método — a primeira linha que casa vale.</li>
+  <li>Use <code>scram-sha-256</code> para senhas em rede, <code>peer</code> no local, <code>cert</code> para máquinas; <code>trust</code> só em teste.</li>
+  <li>SSL no servidor: <code>ssl = on</code> + certificados; no cliente: <code>sslmode=require</code> (ou <code>verify-full</code> em produção).</li>
+  <li>Erros de barreira: <code>no pg_hba.conf entry…</code> e <code>password authentication failed</code>.</li>
+  <li>Nunca exponha a 5432 na internet; mantenha o PostgreSQL atualizado e logue as conexões.</li>
+</ul>
+
+<div class="tip"><strong>Próxima aula:</strong> <a href="replicacao.html">Replicação física e lógica</a> — com o banco seguro, faça cópias vivas dele em outra máquina para aguentar falhas e escalar leituras.</div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js?v=1"></script>
+</body>
+</html>

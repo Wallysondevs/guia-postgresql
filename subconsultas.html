@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Subconsultas e CTEs (WITH) | Guia PostgreSQL</title>
+<meta name="description" content="Subconsultas no PostgreSQL: uma SELECT dentro da outra — com IN no WHERE (clientes que fecam pedido), escalar com > (preço acima da média), EXISTS, subconsulta no FROM (tabela derivada) e CTEs com WITH para dar nome às consultas. Veja a ordem de execução, o erro 'more than one row returned by a subquery' e pratique no simulador de psql do banco loja_aurora.">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<script>try{history.scrollRestoration="manual"}catch(e){}function z(){window.scrollTo(0,0);document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0}window.addEventListener("DOMContentLoaded",z);window.addEventListener("load",z);window.addEventListener("pageshow",z);window.addEventListener("pagehide",function(){window.scrollTo(0,0);document.documentElement.scrollTop=0;});document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a){var h=a.getAttribute("href")||"";if(/[.]html($|[?#])/.test(h)&&a.host===location.host){window.scrollTo(0,0);document.documentElement.scrollTop=0;}}});</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1><span class="hl">Subconsultas</span> e CTEs (WITH)</h1>
+
+<p class="intro">Às vezes a pergunta precisa de <strong>duas etapas</strong>: "quais clientes fecam pedido?" primeiro você olha a tabela de pedidos, <em>depois</em> filtra os clientes. A <strong>subconsulta</strong> faz isso dentro de um único comando — é uma <code>SELECT</code> dentro de outra, como uma pergunta dentro da pergunta. O <code>WITH</code> (CTE) serve para dar <strong>nome</strong> a essas consultas internas e deixar tudo legível.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Subconsulta com <code>IN</code> no WHERE;</li>
+  <li>Subconsulta <strong>escalar</strong> (com <code>=</code>, <code>&gt;</code>) — deve voltar uma única linha;</li>
+  <li><code>EXISTS</code> — "só importa que exista";</li>
+  <li>Subconsulta no <code>FROM</code> (tabela derivada);</li>
+  <li>CTEs com <code>WITH nome AS (...)</code>, inclusive várias de uma vez;</li>
+  <li>O erro <code>more than one row returned by a subquery</code>;</li>
+  <li>Praticar no simulador de psql.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Subconsulta com IN no WHERE</h2>
+<p>A pergunta "quais clientes fecam pedido?" em duas etapas: (1) pegue os <code>cliente_id</code> da tabela de pedidos; (2) filtre os clientes cujo id está nessa lista. O <code>IN (SELECT ...)</code> junta as duas etapas:</p>
+<pre class="term">loja_aurora=&gt; SELECT nome FROM clientes
+             WHERE id IN (SELECT cliente_id FROM pedidos);
+    nome
+------------
+ Ana Souza
+ Beto Lima
+(2 rows)</pre>
+<p>A subconsulta de dentro roda <strong>primeiro</strong> e entrega a lista <code>(1, 2, 1)</code>; depois o WHERE de fora mantém só os clientes cujo id está na lista. Pense nela como um conjunto de valores entre parênteses.</p>
+<dl class="anatomy">
+  <dt>SELECT nome FROM clientes</dt><dd>a consulta de fora (a pergunta principal)</dd>
+  <dt>WHERE id IN (...)</dt><dd>filtra pelo conjunto de ids</dd>
+  <dt>SELECT cliente_id FROM pedidos</dt><dd>a subconsulta: roda primeiro e alimenta o IN</dd>
+</dl>
+
+<hr>
+
+<h2>Subconsulta escalar: um valor só</h2>
+<p>Também dá para comparar com o <strong>resultado de uma agregação</strong> — "quais produtos custam acima da média?":</p>
+<pre class="term">loja_aurora=&gt; SELECT nome, preco
+             FROM produtos
+             WHERE preco &gt; (SELECT AVG(preco) FROM produtos);
+   nome   | preco
+----------+-------
+ Camiseta | 59.90
+ Boné     | 49.90
+(2 rows)</pre>
+<p>A média é 32.82, então só Camiseta e Boné passam. Esse tipo de subconsulta (com <code>=</code>, <code>&gt;</code>, <code>&lt;</code>) se chama <strong>escalar</strong>: ela precisa devolver <strong>exatamente um valor</strong>.</p>
+
+<div class="warning">
+<strong>Se a subconsulta escalar voltar mais de uma linha, o PostgreSQL para tudo</strong>
+</div>
+<pre class="term">loja_aurora=&gt; SELECT nome FROM clientes WHERE id = (SELECT cliente_id FROM pedidos);
+ERROR:  more than one row returned by a subquery used as an expression</pre>
+<p>A tabela <code>pedidos</code> tem 3 linhas, então <code>= (SELECT cliente_id ...)</code> não faz sentido. Nesse caso, use <code>IN</code> (várias linhas) — ou agregue a subconsulta para virar um valor só.</p>
+
+<hr>
+
+<h2>EXISTS: só importa que exista</h2>
+<p>Quando você não quer o valor, só quer saber <em>se existe</em> algo, o <code>EXISTS</code> é mais direto (e o PostgreSQL para na primeira linha encontrada — é rápido):</p>
+<pre class="term">loja_aurora=&gt; SELECT nome FROM clientes c
+             WHERE EXISTS (SELECT 1 FROM pedidos p WHERE p.cliente_id = c.id);
+    nome
+------------
+ Ana Souza
+ Beto Lima
+(2 rows)</pre>
+<p>Tradução: "me dê os clientes para os quais existe pelo menos um pedido ligada a eles". A subconsulta de dentro é <strong>correlacionada</strong>: ela usa <code>c.id</code> da linha de fora — cada cliente testa a própria subconsulta.</p>
+
+<hr>
+
+<h2>Subconsulta no FROM: tabela derivada</h2>
+<p>Uma subconsulta também pode aparecer no <code>FROM</code>, como se fosse uma tabela temporária (por isso precisa de apelido, aqui <code>resumo</code>):</p>
+<pre class="term">loja_aurora=&gt; SELECT estado, total
+             FROM (SELECT estado, COUNT(*) AS total FROM clientes GROUP BY estado) AS resumo
+             WHERE total &gt; 1;
+ estado | total
+--------+-------
+ PI     |     3
+(1 row)</pre>
+<p>Primeiro a "tabela" <code>resumo</code> é calculada (contagem por estado); depois o SELECT de fora filtra o resultado. É como salvar o rascunho numa gaveta e continuar trabalhando em cima dele.</p>
+
+<hr>
+
+<h2>CTE: WITH dá nome à subconsulta</h2>
+<p>Consultas grandes com várias subconsultas aninhadas viram uma sopa de parênteses. O <code>WITH</code> resolve isso dando <strong>nome</strong> a cada etapa — como batizar cada gaveta do arquivo:</p>
+<pre class="term">loja_aurora=&gt; WITH clientes_pi AS (
+               SELECT * FROM clientes WHERE estado = 'PI'
+             )
+             SELECT nome FROM clientes_pi;
+   nome
+-----------
+ Ana Souza
+ Beto Lima
+ Eva Nike
+(3 rows)</pre>
+<dl class="anatomy">
+  <dt>WITH clientes_pi AS (...)</dt><dd>declara a CTE: uma consulta com nome, válida só dentro deste comando</dd>
+  <dt>SELECT nome FROM clientes_pi</dt><dd>usa a CTE como se fosse uma tabela comum</dd>
+</dl>
+<p>E dá para declarar <strong>várias CTEs</strong> separadas por vírgula, cada uma usando a anterior:</p>
+<pre class="term">loja_aurora=&gt; WITH pedidos_por_cliente AS (
+               SELECT cliente_id, COUNT(*) AS total FROM pedidos GROUP BY cliente_id
+             )
+             SELECT c.nome, pc.total
+             FROM clientes c
+             JOIN pedidos_por_cliente pc ON pc.cliente_id = c.id;
+   nome    | total
+-----------+-------
+ Ana Souza |     2
+ Beto Lima |     1
+(2 rows)</pre>
+<p>Leitura de cima para baixo, como um roteiro — muito mais legível que parênteses dentro de parênteses.</p>
+
+<hr>
+
+<h2>Resumo dos tipos</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo</th><th>Onde aparece</th><th>Devolve</th><th>Exemplo</th></tr>
+<tr><td><code>IN (SELECT ...)</code></td><td>no WHERE</td><td>uma lista de valores</td><td><code>id IN (SELECT cliente_id FROM pedidos)</code></td></tr>
+<tr><td>escalar</td><td>no WHERE, com <code>=</code> <code>&gt;</code> <code>&lt;</code></td><td><strong>um único valor</strong></td><td><code>preco &gt; (SELECT AVG(preco) FROM produtos)</code></td></tr>
+<tr><td><code>EXISTS (SELECT ...)</code></td><td>no WHERE</td><td>verdadeiro/falso</td><td><code>EXISTS (SELECT 1 FROM pedidos p WHERE ...)</code></td></tr>
+<tr><td>tabela derivada</td><td>no FROM (com apelido)</td><td>uma tabela temporária</td><td><code>FROM (SELECT ...) AS resumo</code></td></tr>
+<tr><td>CTE (<code>WITH</code>)</td><td>no início do comando</td><td>uma "tabela" nomeada</td><td><code>WITH clientes_pi AS (...) SELECT ...</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Missões no simulador</h2>
+<p>O simulador executa as peças que compõem subconsultas (IN com lista, JOIN, WHERE). Pratique as consultas equivalentes:</p>
+
+<div class="try" data-goal="Ana Souza" data-solucao="SELECT c.nome FROM clientes c JOIN pedidos p ON c.id = p.cliente_id;">
+<p class="try-task"><strong>Missão 1:</strong> "quem fez pedido?" sem subconsulta: junte clientes e pedidos com JOIN. A saída mostra <code>Ana Souza</code>.</p>
+</div>
+
+<div class="try" data-goal="Boné" data-solucao="SELECT nome FROM produtos WHERE preco &gt; 30;">
+<p class="try-task"><strong>Missão 2:</strong> "produtos acima de 30 reais" (a subconsulta seria <code>preco &gt; (SELECT AVG(preco) ...)</code>): <code>SELECT nome FROM produtos WHERE preco &gt; 30;</code> — a saída mostra <code>Boné</code>.</p>
+</div>
+
+<div class="try" data-goal="(2 rows)" data-solucao="SELECT nome FROM clientes WHERE estado = 'PI' AND id &gt; 1;">
+<p class="try-task"><strong>Missão 3:</strong> pratique filtro composto com <code>AND</code> (é assim que a subconsulta afinaria o resultado): <code>SELECT nome FROM clientes WHERE estado = 'PI' AND id &gt; 1;</code> — só Beto e Eva, ou seja <code>(2 rows)</code>.</p>
+</div>
+
+<div class="try" data-goal="Carla Reis" data-solucao="SELECT nome FROM clientes WHERE estado = 'SP' OR estado = 'PE';">
+<p class="try-task"><strong>Missão 4:</strong> junte duas condições com <code>OR</code>: <code>SELECT nome FROM clientes WHERE estado = 'SP' OR estado = 'PE';</code> — a saída mostra <code>Carla Reis</code> (SP) e Diego (PE).</p>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Subconsulta = <code>SELECT</code> dentro de <code>SELECT</code>; a de dentro roda primeiro.</li>
+  <li><code>IN (SELECT ...)</code> para listas; <code>= &gt; &lt; (SELECT ...)</code> exige <strong>um valor só</strong> (escalar); <code>EXISTS</code> para "existe?".</li>
+  <li>No FROM, a subconsulta vira tabela derivada e precisa de apelido.</li>
+  <li><code>WITH nome AS (...)</code> cria CTEs legíveis, várias seguidas, cada uma usando a anterior.</li>
+  <li>Erro clássico: <code>more than one row returned by a subquery used as an expression</code>.</li>
+</ul>
+
+<div class="tip"><strong>Próxima aula:</strong> <a href="case-when.html">CASE WHEN: condicionais no SELECT</a> — o if/else do SQL para classificar valores na hora da consulta.</div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js?v=1"></script>
+</body>
+</html>

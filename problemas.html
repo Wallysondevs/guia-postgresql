@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Problemas comuns do PostgreSQL e psql — conexão recusada, senha, banco não existe, lock | Guia PostgreSQL</title>
+<meta name="description" content="Guia de troubleshooting de PostgreSQL e psql: os problemas que mais aparecem na hora de conectar e operar — conexão recusada (servidor fora do ar/porta errada), password authentication failed, database does not exist, relation does not exist, duplicate key, foreign key, lock/deadlock de transação esquecida, permission denied e UPDATE sem WHERE. Cada um com a mensagem real em caixa de aviso, a causa e o passo a passo do conserto, com missões no psql simulado.">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<script>try{history.scrollRestoration="manual"}catch(e){}function z(){window.scrollTo(0,0);document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0}window.addEventListener("DOMContentLoaded",z);window.addEventListener("load",z);window.addEventListener("pageshow",z);window.addEventListener("pagehide",function(){window.scrollTo(0,0);document.documentElement.scrollTop=0;});document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a){var h=a.getAttribute("href")||"";if(/[.]html($|[?#])/.test(h)&&a.host===location.host){window.scrollTo(0,0);document.documentElement.scrollTop=0;}}});</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1><span class="hl">Problemas</span> comuns de PostgreSQL — e como resolver</h1>
+
+<p class="intro">Todo mundo trava no PostgreSQL em alguma hora — a boa notícia é que <strong>cada erro já diz o código SQLSTATE e a causa</strong>. Nesta página estão as trombadas que mais aparecem no dia a dia (conexão, senha, banco/tabela inexistente, lock, permissão), cada uma com a mensagem real, a causa e o conserto. Várias dá para provocar de propósito no psql simulado abaixo.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O roteiro de diagnóstico: leia a mensagem inteira (ela traz <code>ERROR</code>/<code>FATAL</code>, o SQLSTATE e às vezes <code>HINT</code>).</li>
+  <li>Conexão recusada (08006), senha errada (28P01), banco não existe (3D000) — os três da hora de conectar.</li>
+  <li>Tabela não existe (42P01), chave duplicada (23505), chave estrangeira (23503), lock (55P03/40P01).</li>
+  <li>Permissão negada e o perigo do <code>UPDATE</code>/<code>DELETE</code> sem <code>WHERE</code>.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>O roteiro de diagnóstico (sempre nesta ordem)</h2>
+<ol class="passo">
+  <li>Leia a mensagem <strong>inteira</strong> — <code>ERROR</code> vs <code>FATAL</code> (FATAL = a conexão cai na hora).</li>
+  <li>Anote o <strong>SQLSTATE</strong> (5 caracteres) e procure na <a href="ref-erros.html">cola de erros</a>.</li>
+  <li>Se tiver <code>LINE 1: … ^</code>, a setinha marca a coluna exata do problema no seu comando.</li>
+  <li>Se tiver <code>HINT:</code>, o próprio servidor está sugerindo a solução — leia ele.</li>
+</ol>
+
+<hr>
+
+<h2>1. "Connection refused" — não conecta no servidor</h2>
+<div class="warning"><strong>Erro real (08006):</strong>
+<pre class="term">$ psql -h localhost -U ana loja_aurora
+psql: error: connection to server at "localhost" (127.0.0.1), port 5432 failed: Connection refused
+        Is the server running on that host and accepting TCP/IP connections?</pre></div>
+<p><strong>Causa:</strong> o servidor PostgreSQL está parado, ou está em outra porta/host. <strong>Solução:</strong> teste com <code>pg_isready</code>; suba o serviço (<code>sudo systemctl start postgresql</code> no Linux, ou abra o app/Docker); confira a porta padrão <strong>5432</strong> com <code>psql -p 5432 …</code>.</p>
+
+<hr>
+
+<h2>2. "password authentication failed" — senha errada</h2>
+<div class="warning"><strong>Erro real (28P01):</strong>
+<pre class="term">$ psql -U ana loja_aurora
+Password for user ana:
+psql: error: connection to server at "localhost" (::1), port 5432 failed: FATAL:  password authentication failed for user "ana"</pre></div>
+<p><strong>Causa:</strong> senha incorreta (ou o <code>pg_hba.conf</code> exige método diferente, ex.: <code>scram-sha-256</code> vs <code>md5</code>). <strong>Solução:</strong> confira a senha; para trocar: <code>sudo -u postgres psql</code> e <code>ALTER USER ana PASSWORD 'nova_senha';</code>; no psql, <code>\password ana</code>.</p>
+
+<hr>
+
+<h2>3. "database does not exist" — banco errado</h2>
+<div class="warning"><strong>Erro real (3D000):</strong>
+<pre class="term">$ psql -U ana loja_aurora_typo
+psql: error: connection to server at "localhost", port 5432 failed: FATAL:  database "loja_aurora_typo" does not exist</pre></div>
+<p><strong>Causa:</strong> nome do banco com erro de digitação. <strong>Solução:</strong> liste os bancos com <code>psql -U ana -l</code> (ou <code>\l</code> dentro do psql) e conecte no nome certo; se precisar criar: <code>CREATE DATABASE loja_aurora;</code>.</p>
+
+<div class="try" data-goal="does not exist" data-solucao="\c banco_fantasma">
+<p class="try-task"><strong>Missão:</strong> provoque o 3D000 no simulador: <code>\c banco_fantasma</code> → <code>FATAL:  database "banco_fantasma" does not exist</code>.</p>
+</div>
+
+<hr>
+
+<h2>4. "relation does not exist" — tabela não existe</h2>
+<div class="warning"><strong>Erro real (42P01):</strong>
+<pre class="term">loja_aurora=&gt; SELECT * FROM clientes;
+ERROR:  relation "clientes" does not exist
+LINE 1: SELECT * FROM clientes;
+                      ^</pre>
+<strong>Possíveis causas:</strong> digitou errado, esqueceu de rodar o <code>CREATE TABLE</code>, está no banco errado, ou usou maiúscula sem aspas (<code>Clientes</code> ≠ <code>"Clientes"</code>).</div>
+<p><strong>Solução:</strong> <code>\dt</code> lista as tabelas do banco atual; <code>SELECT current_database();</code> diz em qual banco você está; rode o script do schema (<code>\i schema.sql</code>).</p>
+
+<div class="try" data-goal="does not exist" data-solucao="SELECT * FROM tabela_fantasma;">
+<p class="try-task"><strong>Missão:</strong> provoque o 42P01: <code>SELECT * FROM tabela_fantasma;</code> → <code>relation "tabela_fantasma" does not exist</code>.</p>
+</div>
+
+<hr>
+
+<h2>5. "duplicate key value violates unique constraint" — valor repetido</h2>
+<div class="warning"><strong>Erro real (23505):</strong>
+<pre class="term">loja_aurora=&gt; INSERT INTO clientes (nome, email) VALUES ('Outra Ana', 'ana@email.com');
+ERROR:  duplicate key value violates unique constraint "clientes_email_key"
+DETAIL:  Key (email)=(ana@email.com) already exists.</pre></div>
+<p><strong>Causa:</strong> a coluna tem <code>UNIQUE</code> (ou é PK) e o valor já existe. <strong>Solução:</strong> use outro valor, faça <code>UPDATE</code> na linha existente, ou use upsert: <code>INSERT … ON CONFLICT (email) DO UPDATE SET nome = EXCLUDED.nome;</code>.</p>
+
+<div class="try" data-goal="duplicate key" data-solucao="INSERT INTO clientes (nome, email) VALUES ('Outra Ana', 'ana@email.com');">
+<p class="try-task"><strong>Missão:</strong> provoque o 23505: repita o email <code>ana@email.com</code> → <code>duplicate key value…</code>.</p>
+</div>
+
+<hr>
+
+<h2>6. "violates foreign key constraint" — referência quebrada</h2>
+<div class="warning"><strong>Erro real (23503):</strong>
+<pre class="term">loja_aurora=&gt; INSERT INTO pedidos (cliente_id) VALUES (999);
+ERROR:  insert or update on table "pedidos" violates foreign key constraint "pedidos_cliente_id_fkey"
+DETAIL:  Key (cliente_id)=(999) is not present in table "clientes".</pre></div>
+<p><strong>Causa:</strong> o <code>cliente_id</code> não existe em <code>clientes</code> — ou você está apagando um cliente que tem pedidos. <strong>Solução:</strong> insira o pai antes; confira com <code>SELECT id FROM clientes;</code>; para apagar em cascata, declare a FK com <code>ON DELETE CASCADE</code>.</p>
+
+<div class="try" data-goal="foreign key" data-solucao="INSERT INTO pedidos (cliente_id) VALUES (999);">
+<p class="try-task"><strong>Missão:</strong> provoque o 23503: <code>INSERT INTO pedidos (cliente_id) VALUES (999);</code> → <code>violates foreign key constraint</code>.</p>
+</div>
+
+<hr>
+
+<h2>7. Lock / deadlock — transação esquecida segurando a linha</h2>
+<div class="warning"><strong>Erros reais (55P03 / 40P01):</strong>
+<pre class="term">loja_aurora=&gt; BEGIN;
+loja_aurora*&gt; UPDATE produtos SET estoque = 5 WHERE id = 1;
+UPDATE 1
+-- (esqueceu o COMMIT… em outra sessão:)
+loja_aurora=&gt; UPDATE produtos SET estoque = 6 WHERE id = 1;
+-- fica ESPERANDO no lock…
+ERROR:  deadlock detected</pre></div>
+<p><strong>Causa:</strong> uma sessão fez <code>BEGIN</code> + <code>UPDATE</code> e não fechou a transação — a linha fica travada para as outras. <strong>Solução:</strong> na sessão travada, rode <code>COMMIT;</code> ou <code>ROLLBACK;</code>; para investigar, consulte <code>pg_locks</code> e <code>pg_stat_activity</code>.</p>
+
+<hr>
+
+<h2>8. "permission denied for table" — usuário sem acesso</h2>
+<div class="warning"><strong>Erro real (42501):</strong>
+<pre class="term">loja_aurora=&gt; SELECT * FROM clientes;
+ERROR:  permission denied for table clientes</pre></div>
+<p><strong>Causa:</strong> o usuário conectado não tem <code>GRANT</code> na tabela (todo objeto tem dono). <strong>Solução:</strong> como superuser: <code>GRANT SELECT, INSERT ON clientes TO ana;</code> — veja a aula <a href="usuarios-permissoes.html">usuários e permissões</a>; confira quem você é com <code>SELECT current_user;</code>.</p>
+
+<hr>
+
+<h2>9. "syntax error at or near" — comando mal formado</h2>
+<div class="warning"><strong>Erro real (42601):</strong>
+<pre class="term">loja_aurora=&gt; SELEC * FROM clientes;
+ERROR:  syntax error at or near "selec"
+LINE 1: SELEC * FROM clientes;
+        ^</pre></div>
+<p><strong>Causa:</strong> palavra-chave errada, vírgula sobrando, ou ordem errada (<code>SELECT … FROM … WHERE … GROUP BY … ORDER BY … LIMIT</code>). <strong>Solução:</strong> a setinha <code>^</code> mostra exatamente onde o servidor parou.</p>
+
+<div class="try" data-goal="syntax error" data-solucao="SELEC * FROM clientes;">
+<p class="try-task"><strong>Missão:</strong> provoque o 42601: <code>SELEC * FROM clientes;</code> → <code>syntax error at or near "selec"</code>.</p>
+</div>
+
+<hr>
+
+<h2>10. Meta-comando inválido no psql</h2>
+<div class="warning"><strong>Erro real do psql:</strong>
+<pre class="term">loja_aurora=&gt; \xablau
+Invalid command \xablau. Try \? for help.</pre></div>
+<p><strong>Causa:</strong> meta-comando que não existe. <strong>Solução:</strong> <code>\?</code> lista todos os meta-comandos válidos.</p>
+
+<div class="try" data-goal="Invalid command" data-solucao="\xablau">
+<p class="try-task"><strong>Missão:</strong> digite um meta-comando inventado: <code>\xablau</code> → <code>Invalid command \xablau. Try \? for help.</code></p>
+</div>
+
+<hr>
+
+<h2>11. O clássico: UPDATE/DELETE sem WHERE apagou a tabela</h2>
+<div class="warning"><strong>Perigo real:</strong>
+<pre class="term">loja_aurora=&gt; DELETE FROM produtos;
+DELETE 5   -- apagou TUDO. Sem WHERE, o comando vale para todas as linhas.</pre></div>
+<p><strong>Solução:</strong> o hábito salva: <code>BEGIN;</code> → rode o comando → confira com <code>SELECT</code> → se estiver certo, <code>COMMIT;</code>, se não, <code>ROLLBACK;</code>. Dentro da transação dá para voltar atrás; fora dela, já era.</p>
+
+<hr>
+
+<h2>Checklist quando travar</h2>
+<pre class="term">$ pg_isready                      « 1. o servidor está no ar? (porta 5432)
+$ psql -U ana -l                  « 2. quais bancos existem?
+loja_aurora=&gt; \dt                  « 3. quais tabelas existem neste banco?
+loja_aurora=&gt; \d clientes          « 4. quais colunas e constraints?
+loja_aurora=&gt; SELECT current_database(), current_user;   « 5. onde estou e quem sou?</pre>
+
+<div class="tip"><strong>Próxima aula:</strong> <a href="quiz.html">Quiz de PostgreSQL</a> — 10 perguntas de múltipla escolha com placar automático para testar o que ficou.</div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js?v=1"></script>
+</body>
+</html>

@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cola de comandos SQL — DDL, DML, DQL e transações | Guia PostgreSQL</title>
+<meta name="description" content="Cola de consulta rápida de SQL do Guia PostgreSQL: DDL (CREATE DATABASE/TABLE/INDEX/VIEW, ALTER TABLE, DROP, TRUNCATE), DML (INSERT, UPDATE, DELETE com confirmações INSERT 0 1 / UPDATE 1 / DELETE 1), DQL (SELECT com WHERE, ORDER BY, LIMIT, GROUP BY, HAVING, JOIN), constraints (PRIMARY KEY, FOREIGN KEY, UNIQUE, CHECK, NOT NULL, DEFAULT) e transações (BEGIN/COMMIT/ROLLBACK). Exemplos no banco loja_aurora com missões no psql simulado.">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<script>try{history.scrollRestoration="manual"}catch(e){}function z(){window.scrollTo(0,0);document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0}window.addEventListener("DOMContentLoaded",z);window.addEventListener("load",z);window.addEventListener("pageshow",z);window.addEventListener("pagehide",function(){window.scrollTo(0,0);document.documentElement.scrollTop=0;});document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a){var h=a.getAttribute("href")||"";if(/[.]html($|[?#])/.test(h)&&a.host===location.host){window.scrollTo(0,0);document.documentElement.scrollTop=0;}}});</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Cola de <span class="hl">comandos SQL</span> — DDL, DML, DQL</h1>
+
+<p class="intro">SQL se divide em grupos: <strong>DDL</strong> cria e altera a <em>estrutura</em> (banco, tabelas, índices), <strong>DML</strong> mexe nos <em>dados</em> (inserir, atualizar, apagar) e <strong>DQL</strong> <em>lê</em> os dados (<code>SELECT</code>). Esta página é a cola dos quatro grupos + transações, com a sintaxe e um exemplo real no banco <code>loja_aurora</code>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>DDL: <code>CREATE DATABASE/TABLE/INDEX/VIEW</code>, <code>ALTER TABLE</code>, <code>DROP</code>, <code>TRUNCATE</code>.</li>
+  <li>DML: <code>INSERT</code>, <code>UPDATE</code>, <code>DELETE</code> — e as confirmações <code>INSERT 0 1</code>, <code>UPDATE 2</code>, <code>DELETE 1</code>.</li>
+  <li>DQL: <code>SELECT</code> com <code>WHERE</code>, <code>ORDER BY</code>, <code>LIMIT</code>, <code>GROUP BY</code>, <code>HAVING</code> e <code>JOIN</code>.</li>
+  <li>Transações: <code>BEGIN</code>, <code>COMMIT</code>, <code>ROLLBACK</code>.</li>
+</ul>
+</div>
+
+<div class="try" data-goal="(3 rows)" data-solucao="SELECT nome, estado FROM clientes WHERE estado = 'PI';">
+<p class="try-task"><strong>Missão:</strong> aqueça na cola: <code>SELECT nome, estado FROM clientes WHERE estado = 'PI';</code> — a saída mostra <code>(3 rows)</code>.</p>
+</div>
+
+<hr>
+
+<h2>DDL — estrutura (Data Definition Language)</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Sintaxe</th><th>Exemplo / saída</th></tr>
+<tr><td><code>CREATE DATABASE</code></td><td><code>CREATE DATABASE nome;</code></td><td><code>CREATE DATABASE</code></td></tr>
+<tr><td><code>CREATE TABLE</code></td><td><code>CREATE TABLE t (col tipo restriçoes, …);</code></td><td><code>CREATE TABLE</code> — ver <a href="banco-e-tabelas.html">banco e tabelas</a></td></tr>
+<tr><td><code>CREATE INDEX</code></td><td><code>CREATE [UNIQUE] INDEX nome ON t (col);</code></td><td><code>CREATE INDEX</code> — acelera <code>WHERE col = …</code></td></tr>
+<tr><td><code>CREATE VIEW</code></td><td><code>CREATE VIEW v AS SELECT …;</code></td><td><code>CREATE VIEW</code> — consulta salva com nome</td></tr>
+<tr><td><code>ALTER TABLE</code></td><td><code>ALTER TABLE t ADD COLUMN col tipo;</code> / <code>DROP COLUMN</code> / <code>ADD CONSTRAINT</code></td><td><code>ALTER TABLE</code></td></tr>
+<tr><td><code>DROP TABLE</code></td><td><code>DROP TABLE t;</code> (cuidado: apaga dados!) </td><td><code>DROP TABLE</code></td></tr>
+<tr><td><code>TRUNCATE</code></td><td><code>TRUNCATE TABLE t;</code> — apaga todas as linhas rápido</td><td><code>TRUNCATE TABLE</code></td></tr>
+</table>
+</div>
+<pre class="file" data-file="exemplo.sql">CREATE TABLE exemplo (
+  id      integer PRIMARY KEY,
+  nome    text NOT NULL,
+  email   text UNIQUE,
+  preco   numeric(10,2) CHECK (preco &gt;= 0),
+  criado  date DEFAULT CURRENT_DATE
+);
+CREATE INDEX idx_exemplo_nome ON exemplo (nome);</pre>
+
+<hr>
+
+<h2>DML — dados (Data Manipulation Language)</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Sintaxe</th><th>Confirmação</th></tr>
+<tr><td><code>INSERT</code></td><td><code>INSERT INTO t (cols) VALUES (…), (…);</code></td><td><code>INSERT 0 1</code> (1 linha) / <code>INSERT 0 5</code> (várias)</td></tr>
+<tr><td><code>UPDATE</code></td><td><code>UPDATE t SET col = valor WHERE condição;</code></td><td><code>UPDATE 3</code> (3 linhas mudaram)</td></tr>
+<tr><td><code>DELETE</code></td><td><code>DELETE FROM t WHERE condição;</code></td><td><code>DELETE 1</code></td></tr>
+</table>
+</div>
+<pre class="term">loja_aurora=&gt; INSERT INTO clientes (nome, email) VALUES ('Fred Nobre', 'fred@email.com');
+INSERT 0 1
+loja_aurora=&gt; UPDATE produtos SET preco = 39.90 WHERE id = 2;
+UPDATE 1
+loja_aurora=&gt; DELETE FROM pedidos WHERE status = 'pendente';
+DELETE 1</pre>
+<div class="warning"><strong>Perigo:</strong> <code>UPDATE</code>/<code>DELETE</code> <strong>sem <code>WHERE</code></strong> afeta a tabela inteira (<code>UPDATE 5</code>). O costume salva: rode <code>BEGIN;</code> antes de comandos grandes e confira com <code>SELECT</code> antes do <code>COMMIT</code>.</div>
+
+<hr>
+
+<h2>DQL — consulta (Data Query Language): o SELECT</h2>
+<dl class="anatomy">
+  <dt>SELECT nome, preco</dt><dd>as colunas (ou <code>*</code> para todas)</dd>
+  <dt>FROM produtos</dt><dd>a tabela</dd>
+  <dt>WHERE preco &gt; 20</dt><dd>filtra as linhas (antes de agrupar)</dd>
+  <dt>ORDER BY preco DESC</dt><dd>ordena o resultado</dd>
+  <dt>LIMIT 10</dt><dd>pega só as 10 primeiras linhas</dd>
+</dl>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Cláusula</th><th>Para que serve</th><th>Exemplo</th></tr>
+<tr><td><code>WHERE</code></td><td>filtra linhas: <code>= &lt;&gt; &gt; &lt; &gt;= &lt;= LIKE IN BETWEEN AND OR NOT</code></td><td><code>WHERE estado = 'PI' AND preco &lt; 50</code></td></tr>
+<tr><td><code>ORDER BY</code></td><td>ordena: <code>ASC</code> (crescente) / <code>DESC</code> (decrescente)</td><td><code>ORDER BY preco DESC, nome ASC</code></td></tr>
+<tr><td><code>LIMIT n</code> / <code>OFFSET m</code></td><td>pagina o resultado</td><td><code>LIMIT 10 OFFSET 20</code> (página 3)</td></tr>
+<tr><td><code>GROUP BY col</code></td><td>agrupa linhas iguais numa só</td><td><code>GROUP BY estado</code></td></tr>
+<tr><td><code>HAVING</code></td><td>filtra <em>depois</em> de agrupar (o <code>WHERE</code> filtra antes)</td><td><code>HAVING COUNT(*) &gt; 2</code></td></tr>
+<tr><td><code>JOIN … ON</code></td><td>cruza duas tabelas pela chave comum</td><td><code>JOIN pedidos p ON p.cliente_id = c.id</code></td></tr>
+</table>
+</div>
+<pre class="term">loja_aurora=&gt; SELECT c.nome, p.status FROM clientes c JOIN pedidos p ON c.id = p.cliente_id ORDER BY p.data LIMIT 5;
+    nome    |  status
+------------+-----------
+ Ana Souza  | entregue
+ Beto Lima  | enviado
+ Ana Souza  | pendente
+(3 rows)</pre>
+
+<div class="try" data-goal="Camiseta" data-solucao="SELECT nome, preco FROM produtos ORDER BY preco DESC LIMIT 2;">
+<p class="try-task"><strong>Missão:</strong> use <code>ORDER BY … DESC LIMIT</code>: <code>SELECT nome, preco FROM produtos ORDER BY preco DESC LIMIT 2;</code> — o produto mais caro (<code>Camiseta</code>) vem primeiro.</p>
+</div>
+
+<hr>
+
+<h2>Constraints — as regras da tabela</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Constraint</th><th>Garante que…</th><th>Erro ao violar</th></tr>
+<tr><td><code>PRIMARY KEY</code></td><td>a coluna identifica a linha (única + não nula)</td><td>23505</td></tr>
+<tr><td><code>FOREIGN KEY … REFERENCES</code></td><td>o valor existe na outra tabela</td><td>23503</td></tr>
+<tr><td><code>UNIQUE</code></td><td>não há valor repetido na coluna</td><td>23505</td></tr>
+<tr><td><code>NOT NULL</code></td><td>a coluna não fica vazia (<code>NULL</code>)</td><td>23502</td></tr>
+<tr><td><code>CHECK (…)</code></td><td>a condição é verdadeira (<code>preco &gt;= 0</code>)</td><td>23514</td></tr>
+<tr><td><code>DEFAULT …</code></td><td>se não informar valor, usa o padrão</td><td>—</td></tr>
+</table>
+</div>
+<p>Todas as violações têm <strong>código SQLSTATE</strong> — cola completa em <a href="ref-erros.html">ref-erros</a>.</p>
+
+<hr>
+
+<h2>Transações — tudo ou nada</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Efeito</th></tr>
+<tr><td><code>BEGIN;</code></td><td>abre a transação (prompt vira <code>*</code>)</td></tr>
+<tr><td><code>COMMIT;</code></td><td>grava tudo que foi feito desde o <code>BEGIN</code></td></tr>
+<tr><td><code>ROLLBACK;</code></td><td>desfaz tudo desde o <code>BEGIN</code></td></tr>
+</table>
+</div>
+<pre class="term">loja_aurora=&gt; BEGIN;
+BEGIN
+loja_aurora*&gt; DELETE FROM itens_pedido WHERE pedido_id = 3;
+DELETE 1
+loja_aurora*&gt; ROLLBACK;
+ROLLBACK</pre>
+
+<div class="try" data-goal="BEGIN" data-solucao="BEGIN;">
+<p class="try-task"><strong>Missão:</strong> abra uma transação no simulador: <code>BEGIN;</code> — a saída mostra <code>BEGIN</code> e o prompt vira <code>loja_aurora*&gt;</code>. Depois feche com <code>COMMIT;</code> (grava) ou <code>ROLLBACK;</code> (desfaz).</p>
+</div>
+
+<div class="tip"><strong>Próxima aula:</strong> <a href="ref-psql.html">Cola de meta-comandos do psql</a> — <code>\l</code>, <code>\dt</code>, <code>\d</code>, <code>\c</code>, <code>\du</code>, <code>\q</code>.</div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js?v=1"></script>
+</body>
+</html>

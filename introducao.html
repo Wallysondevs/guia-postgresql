@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>O que é PostgreSQL e por que usar | Guia PostgreSQL</title>
+<meta name="description" content="O que é PostgreSQL e por que usar: banco de dados relacional open source que guarda dados em tabelas com tipos fortes, falado em SQL e comparado a MySQL e SQLite. Entenda a analogia do arquivo de planilhas (banco = arquivo, tabela = planilha, linha = registro) e pratique no psql simulado da máquina ana@notebook com o banco loja_aurora: SELECT * FROM clientes LIMIT 3; mostra Ana Souza.">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<script>try{history.scrollRestoration="manual"}catch(e){}function z(){window.scrollTo(0,0);document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0}window.addEventListener("DOMContentLoaded",z);window.addEventListener("load",z);window.addEventListener("pageshow",z);window.addEventListener("pagehide",function(){window.scrollTo(0,0);document.documentElement.scrollTop=0;});document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a){var h=a.getAttribute("href")||"";if(/[.]html($|[?#])/.test(h)&&a.host===location.host){window.scrollTo(0,0);document.documentElement.scrollTop=0;}}});</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1><span class="hl">O que é PostgreSQL</span> e por que usar</h1>
+
+<p class="intro"><strong>PostgreSQL é um banco de dados relacional open source</strong> — um programa que fica rodando no servidor, guarda seus dados de forma organizada e responde perguntas sobre eles em milissegundos. Ele fala <strong>SQL</strong>, a linguagem padrão dos bancos relacionais, e é a escolha de quem não pode perder dados: Instagram, Spotify e a NASA o usam. Nesta aula: a ideia central, a analogia do arquivo e por que escolher o PostgreSQL.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é um banco de dados relacional — banco = arquivo, tabela = planilha, linha = registro;</li>
+  <li>O que é <code>SQL</code> e por que você diz <em>o quê</em> quer, não <em>como</em> buscar;</li>
+  <li>Quem são o <strong>servidor</strong> (PostgreSQL) e o <strong>cliente</strong> (<code>psql</code>);</li>
+  <li>Por que PostgreSQL — e como ele se compara a MySQL e SQLite;</li>
+  <li>Praticar no psql simulado desta página (máquina <code>ana@notebook</code>, PostgreSQL 16, banco <code>loja_aurora</code>).</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>A analogia do arquivo de planilhas</h2>
+<p>Pense no servidor de banco de dados como <strong>um arquivo de planilhas bem guardado</strong>:</p>
+<ul>
+  <li>o <strong>banco de dados</strong> (database) é o <strong>arquivo inteiro</strong> — ex.: <code>loja_aurora</code>;</li>
+  <li>cada <strong>tabela</strong> é uma <strong>planilha</strong> dentro do arquivo — ex.: <code>clientes</code>, <code>produtos</code>, <code>pedidos</code>;</li>
+  <li>cada <strong>linha</strong> é um <strong>registro</strong>, uma ficha preenchida — ex.: a ficha da Ana Souza;</li>
+  <li>cada <strong>coluna</strong> é um <strong>campo da ficha</strong> — nome, email, cidade, estado.</li>
+</ul>
+<p>O PostgreSQL é o <strong>arquivista</strong>: você faz um pedido em SQL e ele traz a ficha certa na hora — sem você precisar saber em qual gaveta ela está.</p>
+
+<hr>
+
+<h2>SQL: você diz o quê, não como</h2>
+<p>SQL é uma linguagem <strong>declarativa</strong>: você descreve o resultado desejado, e o banco escolhe o melhor caminho para chegar lá. Repare na frase:</p>
+<pre class="file" data-file="consulta.sql">SELECT nome, estado FROM clientes WHERE estado = 'PI';</pre>
+<p>Em português: <em>"selecione nome e estado dos clientes onde o estado é PI"</em>. Você <strong>não</strong> disse "percorra a planilha linha a linha e compare" — o PostgreSQL faz isso sozinho, e faz rápido mesmo com milhões de fichas. Veja na máquina da Ana (<code>ana@notebook</code>, PostgreSQL 16, banco <code>loja_aurora</code>):</p>
+<pre class="term" data-title="psql — ana@notebook">loja_aurora=&gt; SELECT nome, estado FROM clientes WHERE estado = 'PI';
+   nome    | estado
+-----------+--------
+ Ana Souza | PI
+ Beto Lima | PI
+ Eva Nike  | PI
+(3 rows)</pre>
+
+<hr>
+
+<h2>Por que PostgreSQL? (vs MySQL e SQLite)</h2>
+<p>Os três são bancos usados no dia a dia — a diferença é <strong>onde</strong> e <strong>quão crítico</strong> é o dado:</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Banco</th><th>O que é</th><th>Guarda os dados em</th><th>Ideal para</th></tr>
+<tr><td><strong>PostgreSQL</strong></td><td>relacional open source completo (ACID, tipos fortes, JSON, extensões)</td><td>no servidor, em tabelas</td><td>quando o dado não pode errar: financeiro, logística, saúde</td></tr>
+<tr><td>MySQL</td><td>relacional open source com foco em web</td><td>no servidor, em tabelas</td><td>sites e blogs (ex.: WordPress)</td></tr>
+<tr><td>SQLite</td><td>banco inteiro dentro de <strong>um arquivo</strong>, sem servidor</td><td>um arquivo <code>.db</code> dentro do app</td><td>celular e app embarcado (cada celular tem o seu)</td></tr>
+</table>
+</div>
+<p>Regra de bolso: <strong>app no celular → SQLite</strong>; <strong>site na web → MySQL</strong>; <strong>sistema que não pode perder nem corromper dados → PostgreSQL</strong>. Neste guia vamos de PostgreSQL, o mais completo dos três.</p>
+
+<hr>
+
+<h2>Servidor e cliente: quem é quem</h2>
+<p>O <strong>PostgreSQL é o servidor</strong>: fica rodando em segundo plano, ouvindo a porta <code>5432</code>, guardando os arquivos do banco. O <strong>psql é o cliente de terminal</strong>: um programa que você abre, digita comandos SQL e vê a resposta na tela. Na nossa máquina fictícia <code>ana@notebook</code> já está tudo pronto: PostgreSQL 16 no ar e o banco <code>loja_aurora</code> com 4 tabelas.</p>
+
+<div class="try" data-goal="Ana Souza" data-solucao="SELECT * FROM clientes LIMIT 3;">
+<p class="try-task"><strong>Missão:</strong> digite <code>SELECT * FROM clientes LIMIT 3;</code> e aperte <kbd>Enter</kbd>. Você pediu as 3 primeiras fichas da planilha <code>clientes</code> — a saída mostra <code>Ana Souza</code> e <code>(3 rows)</code>.</p>
+</div>
+
+<div class="try" data-goal="itens_pedido" data-solucao="\dt">
+<p class="try-task"><strong>Missão:</strong> agora rode <code>\dt</code>. O psql lista as 4 planilhas do banco <code>loja_aurora</code>: <code>clientes</code>, <code>produtos</code>, <code>pedidos</code> e <code>itens_pedido</code>.</p>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Banco relacional = arquivo de planilhas no servidor; <strong>tabela = planilha</strong>; <strong>linha = registro</strong>; coluna = campo.</li>
+  <li><code>SQL</code> é declarativo: <code>SELECT ... FROM ... WHERE ...</code> diz <em>o quê</em> você quer, e o banco acha <em>como</em>.</li>
+  <li>PostgreSQL: open source, confiável, tipos fortes e JSON — a escolha para dados críticos (vs MySQL para web e SQLite para arquivo local).</li>
+  <li>Servidor = PostgreSQL na porta <code>5432</code>; cliente = <code>psql</code> no terminal.</li>
+</ul>
+
+<div class="tip"><strong>Próxima aula:</strong> <a href="instalar.html">Instalar PostgreSQL no Linux e com Docker</a> — na máquina <code>ana@notebook</code> já está instalado; aqui você aprende a instalar no seu computador.</div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js?v=1"></script>
+</body>
+</html>

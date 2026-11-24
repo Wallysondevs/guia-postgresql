@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CREATE USER, ROLES e GRANT/REVOKE: usuários e permissões | Guia PostgreSQL</title>
+<meta name="description" content="Crie usuários e roles no PostgreSQL com CREATE USER/CREATE ROLE, conceda e revogue acessos com GRANT/REVOKE (SELECT, INSERT, UPDATE, DELETE, ALL), entenda roles de grupo, o princípio do menor privilégio e veja \\du no psql simulado do banco loja_aurora.">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<script>try{history.scrollRestoration="manual"}catch(e){}function z(){window.scrollTo(0,0);document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0}window.addEventListener("DOMContentLoaded",z);window.addEventListener("load",z);window.addEventListener("pageshow",z);window.addEventListener("pagehide",function(){window.scrollTo(0,0);document.documentElement.scrollTop=0;});document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a){var h=a.getAttribute("href")||"";if(/[.]html($|[?#])/.test(h)&&a.host===location.host){window.scrollTo(0,0);document.documentElement.scrollTop=0;}}});</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1><span class="hl">Usuários e permissões</span>: quem pode fazer o quê no banco</h1>
+
+<p class="intro">Pense no banco de dados como um <strong>prédio comercial</strong>: a tabela <code>clientes</code> é uma sala com documentos. Nem todo mundo pode entrar em todas as salas — o <code>CREATE USER</code> cria a pessoa (com login e senha), e o <code>GRANT</code> entrega a chave da sala certa, só com as permissões necessárias. Nesta aula: criar roles, dar e tirar acessos, e o lema do <strong>menor privilégio</strong>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A diferença entre <code>USER</code> e <code>ROLE</code> (no PostgreSQL, usuário é uma role com <code>LOGIN</code>);</li>
+  <li><code>CREATE USER</code>/<code>CREATE ROLE</code> com senha, e listar todo mundo com <code>\du</code>;</li>
+  <li><code>GRANT SELECT/INSERT… ON tabela TO usuario</code> e <code>REVOKE</code> para tirar;</li>
+  <li>Roles de grupo (ex.: <code>equipe_leitura</code>) para não dar permissão um a um;</li>
+  <li>O erro <code>permission denied for table</code> e por que a aplicação <strong>nunca</strong> deve usar superuser;</li>
+  <li>Praticar no psql simulado (<code>ana@notebook</code>, banco <code>loja_aurora</code>, PostgreSQL 16).</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>USER é uma ROLE com LOGIN</h2>
+<p>Desde a versão 8.1, o PostgreSQL unificou os conceitos: <strong>todo usuário é uma role</strong>, mas só a role com o atributo <code>LOGIN</code> pode entrar com senha. Pense assim: <code>ROLE</code> é o cargo ("vendedor", "gerente"); <code>USER</code> é a pessoa física que exerce o cargo e passa na portaria.</p>
+<pre class="term">loja_aurora=&gt; CREATE ROLE vendedor LOGIN PASSWORD 'senha-forte-123';
+CREATE ROLE
+loja_aurora=&gt; CREATE USER maria WITH PASSWORD 'outra-senha-456';
+CREATE ROLE
+loja_aurora=&gt; \du
+   Role name   |                         Attributes
+---------------+------------------------------------------------------------
+ ana           | Create DB
+ maria         | 
+ postgres      | Superuser, Create role, Create DB
+ vendedor      | </pre>
+<p>Repare no <code>\du</code>: ele lista as roles e seus atributos. <code>postgres</code> é o <strong>superuser</strong> — a chave mestra do prédio. A sua aplicação <strong>nunca</strong> deve usar essa chave.</p>
+
+<div class="try" data-goal="superuser" data-solucao="\du">
+<p class="try-task"><strong>Missão:</strong> no terminal abaixo, digite <code>\du</code> e aperte <kbd>Enter</kbd>. Você deve ver a lista de roles com o atributo <code>superuser</code> — é assim que se descobre quem manda no banco.</p>
+</div>
+
+<hr>
+
+<h2>GRANT: entregar a chave da sala certa</h2>
+<p>O <code>GRANT</code> concede privilégios sobre um objeto (tabela, schema, banco) para uma role. A sintaxe é direta: <em>conceda isto, neste objeto, para esta role</em>.</p>
+<pre class="term">loja_aurora=&gt; GRANT SELECT ON clientes TO vendedor;
+GRANT
+loja_aurora=&gt; GRANT SELECT, INSERT, UPDATE ON pedidos TO vendedor;
+GRANT
+loja_aurora=&gt; GRANT ALL PRIVILEGES ON produtos TO maria;
+GRANT</pre>
+<dl class="anatomy">
+  <dt>GRANT</dt><dd>A ordem: concede privilégios.</dd>
+  <dt>SELECT, INSERT</dt><dd>Os privilégios na tabela (ler, inserir, alterar, apagar…).</dd>
+  <dt>ON pedidos</dt><dd>O objeto: a "sala" que a chave abre.</dd>
+  <dt>TO vendedor</dt><dd>A role que recebe a chave.</dd>
+</dl>
+
+<h2>REVOKE: pegar a chave de volta</h2>
+<p>O <code>REVOKE</code> faz o contrário — e vale a regra de ouro: <strong>quem pode dar, pode tirar</strong>. Se o vendedor acessa <code>pedidos</code> e depois isso muda, é um <code>REVOKE</code>:</p>
+<pre class="term">loja_aurora=&gt; REVOKE INSERT, UPDATE ON pedidos FROM vendedor;
+REVOKE
+loja_aurora=&gt; REVOKE ALL PRIVILEGES ON produtos FROM maria;
+REVOKE</pre>
+<p>Quando um usuário sem permissão tenta ler a tabela, o PostgreSQL barra na hora:</p>
+<pre class="term">loja_aurora=&gt; SELECT * FROM clientes;
+ERROR:  permission denied for table clientes</pre>
+
+<div class="warning">
+<strong>Cuidado:</strong> dar <code>GRANT ALL</code> para a role da aplicação é como dar a chave mestra para o porteiro — se a aplicação for invadida (SQL injection), o invasor apaga tudo. Siga o <strong>princípio do menor privilégio</strong>: conceda <code>SELECT</code> numa tabela só se a aplicação realmente só lê nela, e <code>INSERT/UPDATE/DELETE</code> só onde precisa escrever.
+</div>
+
+<hr>
+
+<h2>Privilégios comuns em tabelas</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Privilégio</th><th>O que permite</th><th>Exemplo típico</th></tr>
+<tr><td><code>SELECT</code></td><td>Ler linhas (<code>SELECT</code>)</td><td>Role de leitura/relatórios</td></tr>
+<tr><td><code>INSERT</code></td><td>Inserir linhas novas</td><td>App que cadastra pedidos</td></tr>
+<tr><td><code>UPDATE</code></td><td>Alterar linhas existentes</td><td>App que muda status do pedido</td></tr>
+<tr><td><code>DELETE</code></td><td>Apagar linhas</td><td>Quase nunca para aplicação — restrito a admins</td></tr>
+<tr><td><code>TRUNCATE</code></td><td>Esvaziar a tabela inteira de uma vez</td><td>Limpeza de tabela temporária</td></tr>
+<tr><td><code>ALL PRIVILEGES</code></td><td>Todos os anteriores de uma vez</td><td>Só para o dono da tabela / manutenção</td></tr>
+</table>
+</div>
+<p>Também existem privilégios em outros objetos: <code>USAGE</code> e <code>CREATE</code> em schemas (para usar/criar tabelas dentro da "pasta"), e <code>CREATE</code> no banco (para criar schemas). Para dar acesso ao banco inteiro de uma vez: <code>GRANT CONNECT ON DATABASE loja_aurora TO vendedor;</code></p>
+
+<hr>
+
+<h2>Roles de grupo: permissões em equipe</h2>
+<p>Em vez de dar <code>GRANT</code> para cada pessoa, crie uma <strong>role de grupo</strong> sem login e entregue a ela as permissões; depois encaixe as pessoas nesse grupo — como colocar funcionários numa equipe:</p>
+<pre class="term">loja_aurora=&gt; CREATE ROLE equipe_leitura;
+CREATE ROLE
+loja_aurora=&gt; GRANT SELECT ON clientes, produtos, pedidos TO equipe_leitura;
+GRANT
+loja_aurora=&gt; GRANT equipe_leitura TO maria, vendedor;
+GRANT ROLE</pre>
+<p>Agora <code>maria</code> e <code>vendedor</code> herdaram o <code>SELECT</code> das três tabelas. Para tirar alguém da equipe, basta <code>REVOKE equipe_leitura FROM maria;</code> — um comando só, sem caçar permissões uma a uma.</p>
+
+<div class="try" data-goal="Ana Souza" data-solucao="SELECT nome, email FROM clientes LIMIT 2;">
+<p class="try-task"><strong>Missão:</strong> no simulador você está conectado como <code>ana</code>, que tem permissão de leitura em <code>clientes</code>. Digite <code>SELECT nome, email FROM clientes LIMIT 2;</code> e confirme que a consulta retorna <code>Ana Souza</code>.</p>
+</div>
+
+<div class="try" data-goal="duplicate key" data-solucao="INSERT INTO clientes (nome, email) VALUES ('Ana Souza', 'ana@email.com');">
+<p class="try-task"><strong>Missão:</strong> tente gravar um cliente repetido: <code>INSERT INTO clientes (nome, email) VALUES ('Ana Souza', 'ana@email.com');</code>. O banco barra com <code>duplicate key</code> — a restrição <code>UNIQUE</code> do <code>email</code> protege os dados <em>independente de quem</em> está logado, desde que tenha <code>INSERT</code>.</p>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Usuário = role com <code>LOGIN</code>: <code>CREATE USER maria WITH PASSWORD '…'</code> (ou <code>CREATE ROLE … LOGIN</code>).</li>
+  <li><code>GRANT SELECT, INSERT ON tabela TO role;</code> concede; <code>REVOKE … FROM role;</code> tira.</li>
+  <li>Roles de grupo (sem login) organizam permissões em equipe: <code>GRANT equipe TO pessoa;</code></li>
+  <li>Sem permissão, o erro é <code>ERROR: permission denied for table …</code>.</li>
+  <li>Princípio do menor privilégio: a aplicação nunca usa <code>postgres</code> (superuser); cada role pega só a chave das salas de que precisa.</li>
+  <li>Veja as roles existentes com <code>\du</code> no psql.</li>
+</ul>
+
+<div class="tip"><strong>Próxima aula:</strong> <a href="backup-restore.html">pg_dump e pg_restore</a> — porque ter permissões não adianta nada se o disco queimar: aprenda a fazer a "fotocópia" do banco inteiro.</div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js?v=1"></script>
+</body>
+</html>

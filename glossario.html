@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Glossário de PostgreSQL A–Z — todos os termos explicados em português | Guia PostgreSQL</title>
+<meta name="description" content="Glossário do Guia PostgreSQL em ordem alfabética: ACID, banco de dados, coluna, commit, constraint, DDL/DML/DQL, esquema (schema), foreign key, índice, JOIN, linha (tupla), NULL, normalização, primary key, psql, pool de conexões, query, rollback, schema public, SQL, SQLSTATE, tabela, transação, trigger, UNIQUE, view, serial, uuid, jsonb, VACUUM, EXPLAIN — definição clara e exemplo prático.">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<script>try{history.scrollRestoration="manual"}catch(e){}function z(){window.scrollTo(0,0);document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0}window.addEventListener("DOMContentLoaded",z);window.addEventListener("load",z);window.addEventListener("pageshow",z);window.addEventListener("pagehide",function(){window.scrollTo(0,0);document.documentElement.scrollTop=0;});document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a){var h=a.getAttribute("href")||"";if(/[.]html($|[?#])/.test(h)&&a.host===location.host){window.scrollTo(0,0);document.documentElement.scrollTop=0;}}});</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1><span class="hl">Glossário</span> de PostgreSQL, de A a Z</h1>
+
+<p class="intro">Todo guia de banco de dados usa os mesmos termos o tempo inteiro — e eles voltam em todo canto: nos erros do servidor, no <code>psql</code>, nas conversas de trabalho. Este glossário reúne os <strong>termos essenciais em ordem alfabética</strong>, com definição em português claro e exemplo prático. Consulte sempre que um termo novo aparecer.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Os fundamentos: <strong>banco de dados</strong>, <strong>tabela</strong>, <strong>linha</strong>, <strong>coluna</strong>, <strong>SQL</strong>.</li>
+  <li>As chaves e regras: <strong>PRIMARY KEY</strong>, <strong>FOREIGN KEY</strong>, <strong>UNIQUE</strong>, <strong>CHECK</strong>, <strong>constraint</strong>.</li>
+  <li>A operação: <strong>query</strong>, <strong>JOIN</strong>, <strong>transação</strong> (ACID), <strong>SQLSTATE</strong>, <strong>psql</strong>.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Os termos, de A a Z</h2>
+<dl class="glossario">
+
+  <dt><strong>ACID</strong></dt>
+  <dd>As quatro garanties de uma <strong>transação</strong>: <strong>A</strong>tomicidade (tudo ou nada), <strong>C</strong>onsistência (as regras/constraints valem), <strong>I</strong>solamento (uma transação não vê a outra pela metade) e <strong>D</strong>urabilidade (depois do <code>COMMIT</code>, está gravado). Aula <a href="transacoes.html">transações</a>.</dd>
+
+  <dt><strong>Banco de dados (database)</strong></dt>
+  <dd>O "arquivo" onde o servidor guarda tudo: tabelas, views, índices e permissões. Um servidor PostgreSQL tem vários bancos (<code>postgres</code>, <code>loja_aurora</code>…) — veja com <code>\l</code>. Você se conecta a <em>um</em> banco por vez no psql (<code>\c</code> troca).</dd>
+
+  <dt><strong>Coluna (column / campo)</strong></dt>
+  <dd>Uma propriedade da tabela, com tipo fixo: em <code>clientes</code>, <code>nome</code> é <code>text</code> e <code>estado</code> é <code>char(2)</code>. É o cabeçalho da planilha. Veja com <code>\d clientes</code>.</dd>
+
+  <dt><strong>COMMIT</strong></dt>
+  <dd>O comando que <strong>grava de vez</strong> tudo que foi feito desde o <code>BEGIN</code>. Antes dele, dá para desistir com <code>ROLLBACK</code>.</dd>
+
+  <dt><strong>Constraint (restrição)</strong></dt>
+  <dd>Regra que o banco impõe na tabela: <code>PRIMARY KEY</code>, <code>FOREIGN KEY</code>, <code>UNIQUE</code>, <code>NOT NULL</code>, <code>CHECK</code>, <code>DEFAULT</code>. Quem quebra leva erro com SQLSTATE (cola em <a href="ref-erros.html">ref-erros</a>). Aula <a href="constraints.html">constraints</a>.</dd>
+
+  <dt><strong>DDL / DML / DQL</strong></dt>
+  <dd>As três famílias de SQL: <strong>DDL</strong> (estrutura: <code>CREATE</code>, <code>ALTER</code>, <code>DROP</code>), <strong>DML</strong> (dados: <code>INSERT</code>, <code>UPDATE</code>, <code>DELETE</code>), <strong>DQL</strong> (consulta: <code>SELECT</code>). Cola em <a href="ref-sql.html">ref-sql</a>.</dd>
+
+  <dt><strong>Esquema (schema)</strong></dt>
+  <dd>Uma "pasta" dentro do banco que organiza os objetos. Tudo que você cria cai no <code>public</code> por padrão — por isso o psql mostra <code>public.clientes</code>. Dá para criar esquemas próprios (<code>CREATE SCHEMA loja;</code>) para separar áreas.</dd>
+
+  <dt><strong>FOREIGN KEY (chave estrangeira)</strong></dt>
+  <dd>A coluna que <strong>aponta para a PRIMARY KEY de outra tabela</strong>: <code>pedidos.cliente_id REFERENCES clientes(id)</code>. Garante que não exista pedido de cliente fantasma (erro 23503).</dd>
+
+  <dt><strong>Índice (index)</strong></dt>
+  <dd>Uma estrutura auxiliar que acelera busca na coluna — como o índice remissivo de um livro. <code>CREATE INDEX idx ON produtos (nome);</code> deixa <code>WHERE nome = …</code> voar. Mas índice demais deixa <code>INSERT</code> lento. Aula <a href="indices.html">índices</a>.</dd>
+
+  <dt><strong>JOIN</strong></dt>
+  <dd>O comando que <strong>cruza duas tabelas</strong> pela chave comum: <code>SELECT c.nome, p.status FROM clientes c JOIN pedidos p ON p.cliente_id = c.id;</code>. Tipos: <code>INNER</code> (só os que têm par), <code>LEFT</code> (todos da esquerda, com ou sem par), <code>RIGHT</code>, <code>FULL</code>. Aula <a href="joins.html">JOINs</a>.</dd>
+
+  <dt><strong>Linha (row / tupla / registro)</strong></dt>
+  <dd>Um registro completo da tabela — uma linha da planilha. <code>SELECT * FROM clientes;</code> devolve 5 linhas (no banco de exemplo). O <code>INSERT</code> adiciona linhas; o <code>UPDATE 3</code> mudou 3 linhas.</dd>
+
+  <dt><strong>NULL</strong></dt>
+  <dd>"Sem valor" — diferente de zero e de texto vazio. <code>NULL = NULL</code> dá <code>NULL</code> (use <code>IS NULL</code> para testar). Coluna <code>NOT NULL</code> não aceita. É o espaço em branco da ficha.</dd>
+
+  <dt><strong>Normalização</strong></dt>
+  <dd>A arte de organizar as tabelas para não repetir dado: em vez de guardar o nome do cliente dentro do pedido, guarda só o <code>cliente_id</code> (a FK) e busca o nome com <code>JOIN</code>. Evita dado duplicado e inconsistente.</dd>
+
+  <dt><strong>Pool de conexões</strong></dt>
+  <dd>Na biblioteca <code>pg</code> (Node.js), o objeto que mantém um grupo de conexões abertas com o servidor e as empresta às requisições (<code>max: 20</code>). Sem pool, cada query abriria e fecharia conexão — lento. Projeto <a href="projeto-api-node.html">API Node + pg</a>.</dd>
+
+  <dt><strong>PRIMARY KEY (chave primária)</strong></dt>
+  <dd>A coluna que <strong>identifica cada linha sem repetir</strong> — o "CPF" da tabela (geralmente <code>id serial PRIMARY KEY</code>). Única e não nula; violar dá erro 23505.</dd>
+
+  <dt><strong>psql</strong></dt>
+  <dd>O cliente de terminal do PostgreSQL — onde você digita SQL e meta-comandos (<code>\dt</code>, <code>\l</code>). Prompt típico: <code>loja_aurora=&gt;</code>. Aula <a href="primeiro-psql.html">primeiro psql</a>; cola de meta-comandos em <a href="ref-psql.html">ref-psql</a>.</dd>
+
+  <dt><strong>Query (consulta)</strong></dt>
+  <dd>Qualquer comando SQL enviado ao servidor — especialmente o <code>SELECT</code>. "Rodei uma query" = mandei um comando pro banco.</dd>
+
+  <dt><strong>ROLLBACK</strong></dt>
+  <dd>O comando que <strong>desfaz tudo</strong> desde o <code>BEGIN</code> — o banco volta ao estado anterior, como se nada tivesse acontecido.</dd>
+
+  <dt><strong>SQL</strong></dt>
+  <dd>"Structured Query Language": a linguagem padrão para falar com bancos relacionais. No PostgreSQL, os comandos são em inglês e insensíveis a maiúsculas: <code>select * from clientes;</code> funciona igual a <code>SELECT * FROM clientes;</code>.</dd>
+
+  <dt><strong>SQLSTATE</strong></dt>
+  <dd>O código de 5 caracteres que acompanha todo erro do PostgreSQL (ex.: <code>23505</code> = chave duplicada, <code>42P01</code> = tabela não existe). É o "CPF do erro" — procure na <a href="ref-erros.html">cola de erros</a>.</dd>
+
+  <dt><strong>Tabela (table / relação)</strong></dt>
+  <dd>A unidade que guarda os dados: colunas (com tipo) + linhas (registros). É a planilha do banco. Criada com <code>CREATE TABLE</code>, listada com <code>\dt</code>, descrita com <code>\d</code>. Aula <a href="banco-e-tabelas.html">banco e tabelas</a>.</dd>
+
+  <dt><strong>Transação (transaction)</strong></dt>
+  <dd>Um grupo de comandos que vale inteiro: começa com <code>BEGIN</code>, termina com <code>COMMIT</code> (grava) ou <code>ROLLBACK</code> (desfaz). É o "tudo ou nada" — o pagamento no cartão. Aula <a href="transacoes.html">transações</a> e projeto <a href="projeto-reservas.html">reservas</a>.</dd>
+
+  <dt><strong>Trigger (gatilho)</strong></dt>
+  <dd>Uma função que o banco <strong>dispara sozinha</strong> quando acontece <code>INSERT</code>/<code>UPDATE</code>/<code>DELETE</code> numa tabela (ex.: gravar log de auditoria automático).</dd>
+
+  <dt><strong>UNIQUE</strong></dt>
+  <dd>A constraint que garante <strong>valor sem repetição</strong> na coluna — tipo <code>email text UNIQUE</code>. Violação dá erro 23505 (<code>duplicate key value…</code>).</dd>
+
+  <dt><strong>View</strong></dt>
+  <dd>Uma <strong>consulta salva com nome</strong>, que se comporta como tabela de leitura: <code>CREATE VIEW v AS SELECT …;</code> depois <code>SELECT * FROM v;</code>. Não guarda dados — recalcula na hora. Aula <a href="views.html">views</a>.</dd>
+
+  <dt><strong>serial / bigserial</strong></dt>
+  <dd>Tipo prático de id: <code>integer</code> que o banco <strong>preenche sozinho</strong> em sequência (1, 2, 3…). Por baixo, cria uma sequência + <code>DEFAULT nextval(...)</code>.</dd>
+
+  <dt><strong>uuid</strong></dt>
+  <dd>Identificador universal de 128 bits (<code>'a0eebc99-9c0b-…'</code>), gerado por <code>gen_random_uuid()</code>. Ótimo como id público de API (não entrega quantos registros existem, diferente do serial).</dd>
+
+  <dt><strong>jsonb</strong></dt>
+  <dd>Tipo de documento JSON em formato binário, indexável e consultável (<code>dados-&gt;&gt;'cor'</code>). Para dados flexíveis (atributos de produto, configurações). O <code>json</code> guarda o texto cru; o <code>jsonb</code> é o recomendado.</dd>
+
+  <dt><strong>VACUUM / ANALYZE</strong></dt>
+  <dd><code>VACUUM</code> limpa as linhas mortas que sobram de <code>UPDATE</code>/<code>DELETE</code> (o banco não apaga na hora, só marca); <code>ANALYZE</code> atualiza as estatísticas que o otimizador usa para escolher o plano. O <code>autovacuum</code> faz isso sozinho. Aula <a href="vacuum-analyze.html">VACUUM e ANALYZE</a>.</dd>
+
+  <dt><strong>EXPLAIN</strong></dt>
+  <dd>O comando que mostra <strong>o plano de execução</strong> de uma query (como o banco vai buscar os dados: índice ou varredura). <code>EXPLAIN ANALYZE SELECT …</code> executa de verdade e mostra os tempos. Aula <a href="explain.html">EXPLAIN</a>.</dd>
+
+</dl>
+
+<hr>
+
+<h2>Os pares que mais confundem</h2>
+<ul>
+  <li><strong>banco × tabela × linha:</strong> banco = o arquivo inteiro; tabela = uma planilha dentro dele; linha = um registro da planilha.</li>
+  <li><strong>PRIMARY KEY × FOREIGN KEY × UNIQUE:</strong> PK identifica a linha; FK aponta para a PK de outra tabela; UNIQUE só proíbe repetição (permite um NULL).</li>
+  <li><strong>INNER JOIN × LEFT JOIN:</strong> INNER só traz quem tem par nas duas tabelas; LEFT traz todos da esquerda, com <code>NULL</code> quando não há par.</li>
+  <li><strong>WHERE × HAVING:</strong> WHERE filtra linhas <em>antes</em> de agrupar; HAVING filtra grupos <em>depois</em> do <code>GROUP BY</code>.</li>
+  <li><strong>text × varchar(n) × char(n):</strong> text sem limite (preferido); varchar com limite; char de tamanho fixo preenchido com espaços.</li>
+  <li><strong>numeric × real:</strong> numeric é exato (dinheiro); real é ponto flutuante aproximado (medição científica).</li>
+  <li><strong>timestamp × timestamptz:</strong> sem fuso vs. com fuso (o <code>tz</code> guarda em UTC e converte na hora de mostrar — use ele).</li>
+  <li><strong>json × jsonb:</strong> json guarda o texto cru; jsonb guarda binário, indexável e mais rápido — prefira jsonb.</li>
+  <li><strong>COMMIT × ROLLBACK:</strong> COMMIT grava a transação; ROLLBACK desfaz. Os dois fecham a transação aberta pelo BEGIN.</li>
+  <li><strong>DDL × DML:</strong> DDL muda a estrutura (<code>CREATE TABLE</code>); DML muda os dados (<code>INSERT</code>).</li>
+</ul>
+
+<div class="tip"><strong>Próxima aula:</strong> <a href="problemas.html">Problemas comuns e soluções</a> — conexão recusada, senha errada, banco não existe, lock, permissão negada: a mensagem real, a causa e o conserto de cada um.</div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js?v=1"></script>
+</body>
+</html>

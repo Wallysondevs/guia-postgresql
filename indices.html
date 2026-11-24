@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Índices: CREATE INDEX, quando usar e EXPLAIN básico | Guia PostgreSQL</title>
+<meta name="description" content="Índices no PostgreSQL: CREATE INDEX cria um índice remissivo na tabela e acelera buscas com WHERE, JOIN e ORDER BY, mas deixa INSERT/UPDATE/DELETE mais lentos. Veja EXPLAIN com Seq Scan no psql simulado do banco loja_aurora e aprenda quando índice ajuda e quando atrapalha.">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<script>try{history.scrollRestoration="manual"}catch(e){}function z(){window.scrollTo(0,0);document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0}window.addEventListener("DOMContentLoaded",z);window.addEventListener("load",z);window.addEventListener("pageshow",z);window.addEventListener("pagehide",function(){window.scrollTo(0,0);document.documentElement.scrollTop=0;});document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a){var h=a.getAttribute("href")||"";if(/[.]html($|[?#])/.test(h)&&a.host===location.host){window.scrollTo(0,0);document.documentElement.scrollTop=0;}}});</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1><span class="hl">Índices</span>: o índice remissivo da sua planilha</h1>
+
+<p class="intro">Procurar um cliente pelo nome numa tabela de 5 linhas é fácil. Numa tabela de 5 milhões, sem ajuda, o PostgreSQL precisa ler <strong>linha por linha</strong> até achar — a <strong>varredura sequencial (Seq Scan)</strong>. O <strong>índice</strong> resolve isso: é como o índice remissivo no fim de um livro, que leva direto à página certa em vez de folhear tudo.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li><code>CREATE INDEX nome ON tabela (coluna);</code></li>
+  <li><code>EXPLAIN</code>: ler o plano de execução (<code>Seq Scan</code> vs <code>Index Scan</code>);</li>
+  <li>Quando índice <strong>ajuda</strong> (WHERE, JOIN, ORDER BY) e quando <strong>atrapalha</strong> (tabela pequena, muita escrita);</li>
+  <li><code>CREATE UNIQUE INDEX</code> — índice + regra de unicidade.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>O custo da busca sem índice</h2>
+<p>Vamos perguntar ao PostgreSQL <em>como</em> ele executaria uma busca pelo nome do cliente, sem executá-la de verdade: é o <code>EXPLAIN</code>. Na máquina <strong>ana@notebook</strong>, no banco <code>loja_aurora</code>:</p>
+<pre class="term" data-title="ana@notebook — psql (PostgreSQL 16.4)">loja_aurora=&gt; EXPLAIN SELECT * FROM clientes WHERE nome = 'Ana Souza';
+                       QUERY PLAN
+---------------------------------------------------------
+ Seq Scan on clientes  (cost=0.00..35.50 rows=2550 width=72)
+   Filter: (nome = 'Ana Souza'::text)</pre>
+<p><code>Seq Scan</code> = <em>sequential scan</em>, a varredura sequencial: o banco leu a tabela <strong>inteira</strong> e filtrou linha a linha (<code>Filter</code>). Os números de <code>cost=0.00..35.50</code> são o custo estimado dessa leitura — quanto maior a tabela, maior o custo.</p>
+
+<hr>
+
+<h2>Criando o índice</h2>
+<p>O comando é direto: dizemos <em>em qual tabela</em> e <em>em qual coluna</em> queremos o índice remissivo:</p>
+<pre class="file" data-file="indices.sql">CREATE INDEX idx_clientes_nome ON clientes (nome);</pre>
+<dl class="anatomy">
+  <dt>CREATE INDEX</dt><dd>cria um novo índice.</dd>
+  <dt>idx_clientes_nome</dt><dd>o nome do índice — convention <code>idx_tabela_coluna</code>, mas pode ser qualquer nome.</dd>
+  <dt>ON clientes</dt><dd>a tabela que vai ganhar o índice.</dd>
+  <dt>(nome)</dt><dd>a coluna indexada — é nela que as buscas vão ficar rápidas.</dd>
+</dl>
+<pre class="term" data-title="ana@notebook — psql (PostgreSQL 16.4)">loja_aurora=&gt; CREATE INDEX idx_clientes_nome ON clientes (nome);
+CREATE INDEX
+loja_aurora=&gt; \d clientes
+              Table "public.clientes"
+ ...
+Indexes:
+    "clientes_pkey" PRIMARY KEY, btree (id)
+    "clientes_email_key" UNIQUE CONSTRAINT, btree (email)
+    "idx_clientes_nome" btree (nome)</pre>
+<p>Repare no <code>\d clientes</code>: o banco <strong>já tinha índices</strong> — todo <code>PRIMARY KEY</code> e todo <code>UNIQUE</code> criam índice automaticamente (você viu isso na aula de constraints). Agora a coluna <code>nome</code> também tem um.</p>
+<p>Com o índice, o mesmo <code>EXPLAIN</code> no PostgreSQL de verdade mostra o caminho curto:</p>
+<pre class="term" data-title="ana@notebook — psql (PostgreSQL 16.4)">loja_aurora=&gt; EXPLAIN SELECT * FROM clientes WHERE nome = 'Ana Souza';
+                              QUERY PLAN
+------------------------------------------------------------------------
+ Index Scan using idx_clientes_nome on clientes  (cost=0.15..8.17 rows=1 width=72)
+   Index Cond: (nome = 'Ana Souza'::text)</pre>
+<p><code>Index Scan</code> = usou o índice remissivo: em vez de ler 2550 linhas, foi direto na página certa (<code>cost=0.15..8.17</code>).</p>
+<div class="note">
+<strong>No simulador:</strong> o <code>EXPLAIN</code> sempre responde <code>Seq Scan</code> — ele não guarda índices de verdade. No PostgreSQL real, com índice na coluna, aparece o <code>Index Scan</code> como acima.
+</div>
+
+<div class="try" data-goal="CREATE INDEX" data-solucao="CREATE INDEX idx_clientes_nome ON clientes (nome);">
+<p class="try-task"><strong>Missão:</strong> crie o índice <code>idx_clientes_nome</code> na coluna <code>nome</code> da tabela <code>clientes</code>. O psql confirma com <code>CREATE INDEX</code>.</p>
+</div>
+
+<div class="try" data-goal="Seq Scan" data-solucao="EXPLAIN SELECT * FROM clientes WHERE nome = 'Ana Souza';">
+<p class="try-task"><strong>Missão:</strong> rode <code>EXPLAIN SELECT * FROM clientes WHERE nome = 'Ana Souza';</code> e veja o plano: <code>Seq Scan on clientes</code> — a varredura linha a linha.</p>
+</div>
+
+<hr>
+
+<h2>Quando usar — e quando NÃO usar</h2>
+<p>Índice não é de graça: ele ocupa espaço em disco e <strong>cada INSERT, UPDATE e DELETE precisa atualizar o índice também</strong> — ou seja, tabela com muita escrita fica mais lenta. A regra é simples: indexe o que você <em>busca muito</em>, não tudo.</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>✔ Crie índice quando…</th><th>✘ Evite índice quando…</th></tr>
+<tr><td>a coluna aparece muito em <code>WHERE</code> (nome, email)</td><td>a tabela é pequena (dezenas de linhas — o Seq Scan já é barato)</td></tr>
+<tr><td>a coluna é usada em <code>JOIN</code> (<code>pedidos.cliente_id</code>)</td><td>a coluna tem poucos valores possíveis (baixa cardinalidade, ex.: <code>sexo</code>, boolean)</td></tr>
+<tr><td>você ordena sempre por ela (<code>ORDER BY data</code>)</td><td>a tabela sofre INSERT/UPDATE o tempo todo (o índice vira custo em toda escrita)</td></tr>
+<tr><td>você precisa de unicidade sem ser a PK: <code>CREATE UNIQUE INDEX</code></td><td>você "acha que vai precisar" — crie índice por necessidade medida, não por achismo</td></tr>
+</table>
+</div>
+<p>Na prática: crie o índice na coluna da busca depois que a tabela crescer e a consulta começar a demorar — e meça com <code>EXPLAIN</code> antes e depois.</p>
+
+<div class="try" data-goal="(5 rows)" data-solucao="SELECT nome, preco FROM produtos ORDER BY preco DESC;">
+<p class="try-task"><strong>Missão:</strong> liste todos os produtos do mais caro ao mais barato: <code>SELECT nome, preco FROM produtos ORDER BY preco DESC;</code> (saída com <code>(5 rows)</code>). <code>ORDER BY</code> é um dos usos clássicos de índice — é a coluna que o índice remissivo ordena rapidinho.</p>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Sem índice, o PostgreSQL faz <strong>Seq Scan</strong>: lê a tabela inteira linha a linha.</li>
+  <li><code>CREATE INDEX idx ON tabela (coluna);</code> cria o "índice remissivo" dessa coluna.</li>
+  <li><code>EXPLAIN SELECT ...;</code> mostra o plano: <code>Seq Scan</code> (lento) vs <code>Index Scan</code> (rápido, usa o índice).</li>
+  <li>Índice ajuda em <code>WHERE</code>, <code>JOIN</code> e <code>ORDER BY</code>; atrapalha em tabela pequena ou com muita escrita.</li>
+  <li><code>PRIMARY KEY</code> e <code>UNIQUE</code> já criam índice sozinhos. <code>CREATE UNIQUE INDEX</code> = índice + unicidade.</li>
+</ul>
+
+<div class="tip"><strong>Próxima aula:</strong> <a href="views.html">Views: consultas salvas</a> — e se a sua consulta com JOIN ficou grande demais para digitar toda hora? A view dá um nome para ela.</div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js?v=1"></script>
+</body>
+</html>

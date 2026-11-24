@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guia PostgreSQL — banco de dados do zero ao avançado | Guia PostgreSQL</title>
+<meta name="description" content="Curso de PostgreSQL em português: instalar, psql, criar banco e tabelas, CRUD, JOINs, agregações, transacciones, índices, backup, EXPLAIN — com psql simulado no navegador no banco fictício loja_aurora.">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<script>try{history.scrollRestoration="manual"}catch(e){}function z(){window.scrollTo(0,0);document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0}window.addEventListener("DOMContentLoaded",z);window.addEventListener("load",z);window.addEventListener("pageshow",z);window.addEventListener("pagehide",function(){window.scrollTo(0,0);document.documentElement.scrollTop=0;});document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a){var h=a.getAttribute("href")||"";if(/[.]html($|[?#])/.test(h)&&a.host===location.host){window.scrollTo(0,0);document.documentElement.scrollTop=0;}}});</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="hero">
+<h1>Guia PostgreSQL 🐘</h1>
+<p>Aprenda <strong>PostgreSQL do zero</strong>: instale, crie banco e tabelas, faça consultas com JOINs e agregações, garanta integridade com constraints e administre com backup e EXPLAIN — praticando num <strong>psql simulado</strong> no banco fictício <code>loja_aurora</code>.</p>
+<a class="btn btn-lg" href="introducao.html">Comece pelo Nível 1 &#10095;</a>
+</div>
+
+<div class="pager"></div>
+
+<h2>Experimente agora</h2>
+<p>A caixa abaixo é um <strong>psql simulado</strong>: PostgreSQL 16 na máquina <strong>ana@notebook</strong>, conectado no banco <code>loja_aurora</code> (tabelas clientes, produtos, pedidos). Digite <code>\dt</code> para listar tabelas e <code>SELECT * FROM clientes LIMIT 3;</code> para ver dados.</p>
+
+<div class="try" data-goal="Ana Souza" data-solucao="SELECT * FROM clientes LIMIT 3;">
+<p class="try-task"><strong>Missão:</strong> digite <code>\dt</code> para ver as tabelas e depois <code>SELECT nome, estado FROM clientes WHERE estado = 'PI';</code></p>
+</div>
+
+<pre class="term">loja_aurora=&gt; SELECT nome, estado FROM clientes WHERE estado = 'PI';
+   nome    | estado
+-----------+--------
+ Ana Souza | PI
+ Beto Lima | PI
+ Eva Nike  | PI
+(3 rows)</pre>
+
+<hr>
+
+<h2>O que é este guia</h2>
+<p><strong>PostgreSQL é o banco de dados relacional open source mais avançado do mundo</strong> — usado por Instagram, Spotify, NASA. Ele guarda seus dados em tabelas com <strong>tipos fortes</strong>, garante integridade com constraints e responde consultas complexas em milissegundos.</p>
+<ul>
+  <li>Do zero: instalar, <code>psql</code>, criar banco/tabela, <code>INSERT</code>/<code>SELECT</code>/<code>UPDATE</code>/<code>DELETE</code>;</li>
+  <li>Consultas fortes: <code>JOIN</code>, <code>GROUP BY</code>, subconsultas, <code>WITH</code> (CTEs), <code>CASE</code>;</li>
+  <li>Integridade: <code>PRIMARY KEY</code>, <code>FOREIGN KEY</code>, <code>UNIQUE</code>, <code>CHECK</code>, transações <code>BEGIN/COMMIT</code>;</li>
+  <li>Produção: índices, <code>EXPLAIN</code>, usuários e <code>GRANT</code>, <code>pg_dump</code>, replicação.</li>
+</ul>
+
+<hr>
+
+<h2>Escolha sua trilha</h2>
+<div class="trilhas">
+  <div class="trilha n1">
+    <h3>Nível 1 · Iniciante</h3>
+    <p>Instalar, primeiro psql, criar banco/tabela, tipos de dados e o CRUD completo.</p>
+    <a class="btn" href="introducao.html">Começar &#10095;</a>
+  </div>
+  <div class="trilha n2">
+    <h3>Nível 2 · Intermediário</h3>
+    <p>JOINs, agregações com GROUP BY, subconsultas, constraints, índices, views e transações.</p>
+    <a class="btn" href="joins.html">Ver intermediário &#10095;</a>
+  </div>
+  <div class="trilha n3">
+    <h3>Nível 3 · Avançado</h3>
+    <p>Usuários e permissões, backup com pg_dump, EXPLAIN, VACUUM, particionamento, extensões.</p>
+    <a class="btn" href="usuarios-permissoes.html">Ver avançado &#10095;</a>
+  </div>
+</div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js?v=1"></script>
+</body>
+</html>

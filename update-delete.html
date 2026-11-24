@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UPDATE e DELETE com WHERE no PostgreSQL | Guia PostgreSQL</title>
+<meta name="description" content="Como alterar e apagar linhas no PostgreSQL com UPDATE ... SET ... WHERE e DELETE FROM ... WHERE. O perigo de rodar sem WHERE (afeta a tabela inteira: UPDATE 5) e a regra de sempre conferir com SELECT. Erros: relation \"x\" does not exist. No simulador: UPDATE clientes SET cidade = 'Picos' WHERE id = 2; devolve UPDATE 1 e o SELECT mostra Picos.">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<script>try{history.scrollRestoration="manual"}catch(e){}function z(){window.scrollTo(0,0);document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0}window.addEventListener("DOMContentLoaded",z);window.addEventListener("load",z);window.addEventListener("pageshow",z);window.addEventListener("pagehide",function(){window.scrollTo(0,0);document.documentElement.scrollTop=0;});document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a){var h=a.getAttribute("href")||"";if(/[.]html($|[?#])/.test(h)&&a.host===location.host){window.scrollTo(0,0);document.documentElement.scrollTop=0;}}});</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1><span class="hl">UPDATE e DELETE</span> com WHERE</h1>
+
+<p class="intro"><strong><code>UPDATE</code> corrige uma ficha</strong> que já está arquivada e <strong><code>DELETE</code> joga a ficha fora</strong>. Os dois funcionam só sobre as linhas que o <code>WHERE</code> escolher — e é exatamente aí que mora o perigo: <strong>sem WHERE, a tabela inteira é afetada</strong>. Nesta aula você aprende os dois com segurança.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li><code>UPDATE tabela SET coluna = valor WHERE ...;</code> — e a resposta <code>UPDATE n</code>;</li>
+  <li><code>DELETE FROM tabela WHERE ...;</code> — e a resposta <code>DELETE n</code>;</li>
+  <li>Por que o <code>WHERE</code> é o freio: sem ele, todas as linhas mudam/apagam;</li>
+  <li>Conferir com <code>SELECT</code> antes e depois;</li>
+  <li>Erro: <code>relation "x" does not exist</code>;</li>
+  <li>Praticar no simulador.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Corrigindo uma ficha: UPDATE</h2>
+<p>O Beto Lima (id 2) se mudou para Picos. Em vez de apagar a ficha e criar outra, você <strong>atualiza</strong> o campo cidade:</p>
+<pre class="file" data-file="update.sql">UPDATE clientes
+SET cidade = 'Picos'
+WHERE id = 2;</pre>
+
+<dl class="anatomy">
+  <dt>UPDATE clientes</dt><dd>a tabela cujas linhas vão mudar</dd>
+  <dt>SET cidade = 'Picos'</dt><dd>a coluna e o novo valor (pode ter várias, separadas por vírgula)</dd>
+  <dt>WHERE id = 2</dt><dd><strong>quais</strong> linhas mudam — sem o WHERE, mudam TODAS</dd>
+  <dt>;</dt><dd>encerra e executa — a resposta <code>UPDATE 1</code> diz quantas linhas mudaram</dd>
+</dl>
+
+<pre class="term" data-title="psql — ana@notebook">loja_aurora=&gt; UPDATE clientes SET cidade = 'Picos' WHERE id = 2;
+UPDATE 1
+loja_aurora=&gt; SELECT nome, cidade FROM clientes WHERE id = 2;
+   nome    | cidade
+-----------+--------
+ Beto Lima | Picos
+(1 row)</pre>
+
+<hr>
+
+<h2>Apagando uma ficha: DELETE</h2>
+<pre class="file" data-file="delete.sql">DELETE FROM pedidos
+WHERE id = 99;</pre>
+<p>A resposta <code>DELETE 0</code> diz que nenhuma linha tinha <code>id = 99</code> — o <code>WHERE</code> funcionou como filtro e não apagou nada. Se existisse, sairia <code>DELETE 1</code>.</p>
+<pre class="term" data-title="psql — ana@notebook">loja_aurora=&gt; DELETE FROM pedidos WHERE id = 99;
+DELETE 0
+loja_aurora=&gt; DELETE FROM clientes WHERE estado = 'XX';
+DELETE 0</pre>
+
+<hr>
+
+<h2>O maior perigo do SQL: sem WHERE</h2>
+<div class="warning">
+<strong><code>UPDATE</code> e <code>DELETE</code> sem <code>WHERE</code> afetam a tabela INTEIRA</strong>
+<p><code>UPDATE produtos SET preco = 0;</code> não dá erro — dá <code>UPDATE 5</code>: todos os produtos da loja com preço zero! E <code>DELETE FROM clientes;</code> apaga todas as fichas. O psql não pede confirmação. Regra de ouro: <strong>escreva o WHERE, teste o filtro com um SELECT primeiro</strong> (<code>SELECT * FROM produtos WHERE ...;</code>), e só então rode o UPDATE/DELETE. No Nível 2 você verá que <code>BEGIN;</code> … <code>ROLLBACK;</code> salva até de um comando desses.</p>
+</div>
+
+<hr>
+
+<h2>Erros comuns</h2>
+<pre class="term" data-title="psql — ana@notebook">loja_aurora=&gt; UPDATE tabela_fantasma SET x = 1;
+ERROR:  relation "tabela_fantasma" does not exist
+loja_aurora=&gt; DELETE FROM tabela_fantasma;
+ERROR:  relation "tabela_fantasma" does not exist</pre>
+<p>Tabela errada → <code>relation "x" does not exist</code>. Sempre confira o nome com <code>\dt</code>.</p>
+
+<hr>
+
+<h2>Pratique</h2>
+<div class="try" data-goal="UPDATE 1" data-solucao="UPDATE clientes SET cidade = 'Picos' WHERE id = 2;">
+<p class="try-task"><strong>Missão:</strong> mude a cidade do cliente 2: <code>UPDATE clientes SET cidade = 'Picos' WHERE id = 2;</code> → <code>UPDATE 1</code>.</p>
+</div>
+
+<div class="try" data-goal="Picos" data-solucao="SELECT nome, cidade FROM clientes WHERE id = 2;">
+<p class="try-task"><strong>Missão:</strong> confira a mudança: <code>SELECT nome, cidade FROM clientes WHERE id = 2;</code> → a saída mostra <code>Picos</code>.</p>
+</div>
+
+<div class="try" data-goal="DELETE 0" data-solucao="DELETE FROM pedidos WHERE id = 99;">
+<p class="try-task"><strong>Missão:</strong> tente apagar um pedido que não existe: <code>DELETE FROM pedidos WHERE id = 99;</code> → <code>DELETE 0</code> (nenhuma linha apagada).</p>
+</div>
+
+<div class="try" data-goal="does not exist" data-solucao="UPDATE tabela_fantasma SET x = 1;">
+<p class="try-task"><strong>Missão:</strong> atualize uma tabela fantasma: <code>UPDATE tabela_fantasma SET x = 1;</code> → <code>ERROR: relation "tabela_fantasma" does not exist</code>.</p>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>UPDATE t SET col = valor WHERE ...;</code> → <code>UPDATE n</code> (n linhas mudaram).</li>
+  <li><code>DELETE FROM t WHERE ...;</code> → <code>DELETE n</code> (n linhas apagadas).</li>
+  <li><strong>Sem WHERE = tabela inteira afetada.</strong> Sempre teste o filtro com SELECT antes.</li>
+  <li>Tabela errada: <code>relation "x" does not exist</code> — confira com <code>\dt</code>.</li>
+</ul>
+
+<div class="tip"><strong>Próxima aula:</strong> <a href="psql-metacomandos.html">Meta-comandos do psql: \dt, \d, \du, \l</a> — o raio-x do banco: listar tabelas, descrever estrutura e ver usuários.</div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js?v=1"></script>
+</body>
+</html>

@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meta-comandos do psql: \dt, \d, \du, \l | Guia PostgreSQL</title>
+<meta name="description" content="Os meta-comandos do psql (começam com \\ e não levam ponto-e-vírgula): \\l lista bancos, \\c banco conecta, \\dt lista tabelas, \\d tabela descreve a estrutura (colunas, tipos, PRIMARY KEY, UNIQUE), \\du lista usuários/roles, \\? mostra a ajuda e \\q sai. No simulador: \\dt mostra clientes/itens_pedido, \\d clientes mostra UNIQUE, \\du mostra superuser e \\l mostra postgres.">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<script>try{history.scrollRestoration="manual"}catch(e){}function z(){window.scrollTo(0,0);document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0}window.addEventListener("DOMContentLoaded",z);window.addEventListener("load",z);window.addEventListener("pageshow",z);window.addEventListener("pagehide",function(){window.scrollTo(0,0);document.documentElement.scrollTop=0;});document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a){var h=a.getAttribute("href")||"";if(/[.]html($|[?#])/.test(h)&&a.host===location.host){window.scrollTo(0,0);document.documentElement.scrollTop=0;}}});</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1><span class="hl">Meta-comandos do psql</span>: \dt, \d, \du, \l</h1>
+
+<p class="intro">Além do SQL, o psql tem seus <strong>próprios comandos</strong>, que começam com <code>\</code> — são os meta-comandos: eles não vão para o servidor, não precisam de <code>;</code> e servono para inspecionar e navegar. Nesta aula: a família inteira, com o raio-x da tabela <code>clientes</code>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Meta-comando = comando do psql (começa com <code>\</code>), sem <code>;</code>;</li>
+  <li><code>\l</code> bancos · <code>\c banco</code> conecta · <code>\dt</code> tabelas · <code>\d tabela</code> estrutura · <code>\du</code> usuários · <code>\?</code> ajuda · <code>\q</code> sai;</li>
+  <li>Ler o <code>\d clientes</code>: colunas, tipos e restrições (PRIMARY KEY, NOT NULL, UNIQUE);</li>
+  <li>Praticar no simulador.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>A família dos meta-comandos</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Faz</th><th>Exemplo de saída</th></tr>
+<tr><td><code>\l</code></td><td>lista os bancos do servidor</td><td><code>postgres</code>, <code>loja_aurora</code></td></tr>
+<tr><td><code>\c banco</code></td><td>conecta em outro banco</td><td><code>You are now connected to database "..."</code></td></tr>
+<tr><td><code>\dt</code></td><td>lista as tabelas do banco atual</td><td><code>clientes</code>, <code>produtos</code>, <code>pedidos</code>, <code>itens_pedido</code></td></tr>
+<tr><td><code>\d tabela</code></td><td>descreve a estrutura da tabela (colunas, tipos, restrições)</td><td><code>Table "public.clientes"</code> + colunas</td></tr>
+<tr><td><code>\du</code></td><td>lista os usuários (roles) do servidor</td><td><code>postgres (superuser)</code>, <code>ana</code></td></tr>
+<tr><td><code>\?</code></td><td>mostra a ajuda dos meta-comandos</td><td>a lista completa</td></tr>
+<tr><td><code>\q</code></td><td>sai do psql, de volta ao shell</td><td><code>$</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>\dt: quais planilhas eu tenho?</h2>
+<pre class="term" data-title="psql — ana@notebook">loja_aurora=&gt; \dt
++--------------+--------------+
+| Name         | Owner        |
++--------------+--------------+
+| clientes     | ana          |
+| produtos     | ana          |
+| pedidos      | ana          |
+| itens_pedido | ana          |
++--------------+--------------+
+(4 rows)</pre>
+
+<hr>
+
+<h2>\d clientes: o raio-x da planilha</h2>
+<p>O <code>\d</code> abre a tabela e mostra cada coluna, seu tipo e suas restrições:</p>
+<dl class="anatomy">
+  <dt>\d</dt><dd>"describe": descreve a estrutura</dd>
+  <dt>clientes</dt><dd>a tabela que você quer abrir</dd>
+</dl>
+<pre class="term" data-title="psql — ana@notebook">loja_aurora=&gt; \d clientes
+Table "public.clientes"
++-----------+----------+----------------------+
+| Column    | Type     | Modifiers            |
++-----------+----------+----------------------+
+| id        | integer  | PRIMARY KEY          |
+| nome      | text     | NOT NULL             |
+| email     | text     | UNIQUE               |
+| cidade    | text     |                      |
+| estado    | char(2)  |                      |
+| criado_em | date     | DEFAULT CURRENT_DATE |
++-----------+----------+----------------------+</pre>
+<p>É o mesmo <code>CREATE TABLE</code> da aula anterior, relido pelo banco: <code>id</code> é <code>PRIMARY KEY</code>, <code>nome</code> é <code>NOT NULL</code>, <code>email</code> é <code>UNIQUE</code>.</p>
+
+<hr>
+
+<h2>\du: quem pode entrar no servidor</h2>
+<pre class="term" data-title="psql — ana@notebook">loja_aurora=&gt; \du
++-----------+---------------------+
+| Role name | Attributes          |
++-----------+---------------------+
+| postgres  | superuser           |
+| ana       | CREATE DATABASE     |
++-----------+---------------------+
+(2 rows)</pre>
+<p>Os <strong>roles</strong> (usuários) do servidor: <code>postgres</code> é o superuser (pode tudo) e <code>ana</code> pode criar bancos. No Nível 3 você aprende a criar usuários e dar permissões com <code>GRANT</code>.</p>
+
+<hr>
+
+<h2>Pratique</h2>
+<div class="try" data-goal="itens_pedido" data-solucao="\dt">
+<p class="try-task"><strong>Missão:</strong> liste as tabelas: <code>\dt</code> → as 4 planilhas do <code>loja_aurora</code>, incluindo <code>itens_pedido</code>.</p>
+</div>
+
+<div class="try" data-goal="UNIQUE" data-solucao="\d clientes">
+<p class="try-task"><strong>Missão:</strong> abra o raio-x da planilha clientes: <code>\d clientes</code> → a coluna <code>email</code> aparece com a restrição <code>UNIQUE</code>.</p>
+</div>
+
+<div class="try" data-goal="superuser" data-solucao="\du">
+<p class="try-task"><strong>Missão:</strong> veja quem pode entrar no servidor: <code>\du</code> → <code>postgres</code> aparece como <code>superuser</code>.</p>
+</div>
+
+<div class="try" data-goal="postgres" data-solucao="\l">
+<p class="try-task"><strong>Missão:</strong> liste os bancos: <code>\l</code> → <code>postgres</code> e <code>loja_aurora</code>.</p>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Meta-comandos começam com <code>\</code>, são interpretados pelo psql e <strong>não</strong> levam <code>;</code>.</li>
+  <li><code>\l</code> bancos · <code>\c</code> conecta · <code>\dt</code> tabelas · <code>\d t</code> estrutura · <code>\du</code> usuários · <code>\?</code> ajuda · <code>\q</code> sai.</li>
+  <li><code>\d clientes</code> relê o <code>CREATE TABLE</code>: tipos + PRIMARY KEY/NOT NULL/UNIQUE por coluna.</li>
+</ul>
+
+<div class="tip"><strong>Próxima aula:</strong> <a href="joins.html">JOINs: INNER, LEFT, RIGHT, FULL</a> — cruzar planilhas: quais pedidos cada cliente fez, unindo <code>clientes</code> com <code>pedidos</code>.</div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js?v=1"></script>
+</body>
+</html>

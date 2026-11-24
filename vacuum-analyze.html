@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VACUUM, ANALYZE e autovacuum no PostgreSQL | Guia PostgreSQL</title>
+<meta name="description" content="Entenda a manutenção do PostgreSQL: por que UPDATE/DELETE deixam linhas mortas (MVCC), o que VACUUM, VACUUM FULL e VACUUM ANALYZE fazem, para que serve o ANALYZE (estatísticas do planner, usadas pelo EXPLAIN) e como o autovacuum trabalha sozinho — incluindo o risco real do wraparound de transaction IDs se desligar. Pratique no psql simulado.">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<script>try{history.scrollRestoration="manual"}catch(e){}function z(){window.scrollTo(0,0);document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0}window.addEventListener("DOMContentLoaded",z);window.addEventListener("load",z);window.addEventListener("pageshow",z);window.addEventListener("pagehide",function(){window.scrollTo(0,0);document.documentElement.scrollTop=0;});document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a){var h=a.getAttribute("href")||"";if(/[.]html($|[?#])/.test(h)&&a.host===location.host){window.scrollTo(0,0);document.documentElement.scrollTop=0;}}});</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1><span class="hl">VACUUM e ANALYZE</span>: a faxina que mantém o banco rápido</h1>
+
+<p class="intro">No PostgreSQL, um <code>UPDATE</code> não apaga a linha antiga na hora: ele grava uma <strong>linha nova</strong> e marca a velha como morta (é o MVCC — várias versões da mesma linha, para leituras concorrentes verem dados consistentes). Pense numa planilha rabiscada: cada rasura deixa um risco. O <code>VACUUM</code> é a borracha que limpa esses rasgos e libera espaço; o <code>ANALYZE</code> atualiza as <strong>estatísticas</strong> que o planner usa no <code>EXPLAIN</code>. E o <code>autovacuum</code> é o faxineiro automático. Nesta aula: como tudo isso funciona.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Por que <code>UPDATE</code>/<code>DELETE</code> criam <em>dead tuples</em> (linhas mortas) e não liberam espaço sozinhos;</li>
+  <li><code>VACUUM</code>, <code>VACUUM FULL</code>, <code>VACUUM ANALYZE</code> e <code>VACUUM FREEZE</code> — o que cada um faz;</li>
+  <li><code>ANALYZE</code>: coleta estatísticas (pg_stats) para o planner escolher bons planos no <a href="explain.html">EXPLAIN</a>;</li>
+  <li><code>autovacuum</code>: ligado por padrão, quando dispara e por que <strong>nunca</strong> se deve desligar;</li>
+  <li>O risco real do <em>transaction ID wraparound</em>;</li>
+  <li>Praticar no psql simulado: UPDATE que "não muda nada" ainda gera linha morta.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>UPDATE não sobrescreve: cria versão nova</h2>
+<p>Por causa do MVCC, até um <code>UPDATE</code> que grava o <em>mesmo valor</em> cria uma nova versão da linha e marca a anterior como morta. Veja no psql — a linha some da visu, mas o espaço continua ocupado até o VACUUM:</p>
+<pre class="term">loja_aurora=&gt; UPDATE produtos SET estoque = estoque WHERE id = 1;
+UPDATE 1
+loja_aurora=&gt; SELECT id, nome, estoque FROM produtos WHERE id = 1;
+ id |   nome   | estoque
+----+----------+---------
+  1 | Camiseta |      20
+(1 row)</pre>
+<p>O <code>UPDATE 1</code> aconteceu (e no banco real deixou uma <em>dead tuple</em> para trás) mesmo sem mudar o valor. É por isso que rodamos muito <code>UPDATE</code> no banco: ele engorda o arquivo da tabela até a faxina.</p>
+
+<hr>
+
+<h2>VACUUM: a borracha do banco</h2>
+<pre class="term">loja_aurora=&gt; VACUUM produtos;
+VACUUM
+loja_aurora=&gt; VACUUM ANALYZE pedidos;
+VACUUM
+loja_aurora=&gt; VACUUM (VERBOSE) clientes;
+INFO:  vacuuming "public.clientes"
+INFO:  "clientes": removed 0 rows in 0 pages
+…
+VACUUM</pre>
+<p>O <code>VACUUM</code> simples marca o espaço das linhas mortas como <strong>reutilizável</strong> (não devolve ao sistema operacional, mas novas linhas usam aquele espaço). O <code>VACUUM FULL</code> reescreve a tabela inteira num arquivo novo e devolve o espaço ao disco — mas <strong>trava a tabela</strong> durante o processo, então em tabela grande viva é perigoso. O <code>VACUUM FREEZE</code> é interno e vital: marca as linhas como "congeladas" para proteger contra o wraparound de XIDs (veja o aviso abaixo).</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th><th>Bloqueia escrita?</th><th>Quando usar</th></tr>
+<tr><td><code>VACUUM t</code></td><td>Limpa linhas mortas, espaço vira reutilizável</td><td>Não (convivem com Leituras/escritas)</td><td>Manutenção comum — o autovacuum já faz</td></tr>
+<tr><td><code>VACUUM FULL t</code></td><td>Reescreve a tabela e devolve espaço ao disco</td><td><strong>Sim, trava a tabela</strong></td><td>Tabela inchada demais, janela de manutenção</td></tr>
+<tr><td><code>ANALYZE t</code></td><td>Atualiza estatísticas (pg_stats) do planner</td><td>Não</td><td>Depois de cargas grandes de dados</td></tr>
+<tr><td><code>VACUUM ANALYZE t</code></td><td>Os dois juntos</td><td>Não</td><td>Atalho comum</td></tr>
+<tr><td><code>VACUUM FREEZE t</code></td><td>Congela XIDs das linhas (anti-wraparound)</td><td>Não</td><td>O autovacuum faz quando urgente</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>ANALYZE: os olhos do planner</h2>
+<p>O <code>EXPLAIN</code> da aula anterior mostrou <code>rows=2550</code> — de onde veio esse número? Das <strong>estatísticas</strong> que o <code>ANALYZE</code> coleta: histogramas dos valores, os valores mais comuns, o número de linhas. Sem estatísticas boas, o planner "chuta" a rota errada e a consulta fica lenta do nada:</p>
+<pre class="term">loja_aurora=&gt; ANALYZE produtos;
+ANALYZE
+loja_aurora=&gt; SELECT schemaname, tablename, n_live_tup, n_dead_tup, last_analyze, last_autovacuum
+              FROM pg_stat_user_tables;
+ schemaname | tablename | n_live_tup | n_dead_tup |        last_analyze        |     last_autovacuum
+------------+-----------+------------+------------+----------------------------+--------------------------
+ public     | clientes  |          5 |          0 | 2026-11-24 16:30:00.123456 | 2026-11-24 16:10:00.654321
+ public     | produtos  |          5 |          1 | 2026-11-24 16:31:00.111111 | 2026-11-24 16:11:00.222222</pre>
+<p>A visão <code>pg_stat_user_tables</code> é o painel de saúde: <code>n_live_tup</code> (linhas vivas), <code>n_dead_tup</code> (linhas mortas esperando VACUUM), <code>last_analyze</code> e <code>last_autovacuum</code>. Se <code>n_dead_tup</code> só cresce, o autovacuum não está dando conta.</p>
+
+<hr>
+
+<h2>autovacuum: o faxineiro automático</h2>
+<p>Por padrão, o <code>autovacuum = on</code>: processos em segundo plano rodam <code>VACUUM</code> e <code>ANALYZE</code> sozinhos nas tabelas que mais precisam (as que acumulam mais linhas mortas proporcionalmente). Ele não bloqueia a aplicação e é a razão de você quase nunca precisar rodar VACUUM na mão.</p>
+<pre class="file" data-file="/etc/postgresql/16/main/postgresql.conf">autovacuum = on                          # nunca desligue em produção!
+autovacuum_max_workers = 3
+autovacuum_naptime = 1min                # de quanto em quanto tempo ele acorda
+autovacuum_vacuum_threshold = 50         # mínimo de linhas mortas para agir
+autovacuum_analyze_threshold = 50</pre>
+
+<div class="warning">
+<strong>Perigo grave:</strong> desligar o autovacuum parece "otimização", mas leva ao <strong>transaction ID wraparound</strong>: os IDs de transação são números de 32 bits que um dia voltam ao zero — e quando isso se aproxima, o PostgreSQL <em>desliga o servidor de propósito</em> para não corromper os dados. A proteção é exatamente o <code>VACUUM FREEZE</code> que o autovacuum roda. Além disso, sem ANALYZE o planner fica cego e os planos pioram. Conclusão: deixe o autovacuum ligado e ajuste os thresholds se uma tabela muito grande precisar de faxina mais agressiva (ex.: <code>ALTER TABLE pedidos SET (autovacuum_vacuum_scale_factor = 0.05);</code>).
+</div>
+
+<hr>
+
+<h2>Experimente: gere linhas mortas no simulador</h2>
+
+<div class="try" data-goal="UPDATE 1" data-solucao="UPDATE produtos SET estoque = estoque WHERE id = 1;">
+<p class="try-task"><strong>Missão:</strong> rode <code>UPDATE produtos SET estoque = estoque WHERE id = 1;</code> — sim, gravando o mesmo valor. A saída <code>UPDATE 1</code> confirma: no PostgreSQL real, essa linha virou uma <em>dead tuple</em> esperando o VACUUM, mesmo sem mudar nada.</p>
+</div>
+
+<div class="try" data-goal="DELETE 1" data-solucao="DELETE FROM itens_pedido WHERE pedido_id = 3;">
+<p class="try-task"><strong>Missão:</strong> apague um item: <code>DELETE FROM itens_pedido WHERE pedido_id = 3;</code>. O <code>DELETE 1</code> marca a linha como morta — o espaço só volta com o VACUUM.</p>
+</div>
+
+<div class="try" data-goal="(1 row)" data-solucao="SELECT COUNT(*) FROM clientes;">
+<p class="try-task"><strong>Missão:</strong> confira a "saúde" da tabela: rode <code>SELECT COUNT(*) FROM clientes;</code> e veja a agregação sair em <code>(1 row)</code> — consultas com agregação assim o planner estima usando as estatísticas do <code>ANALYZE</code>.</p>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>MVCC: <code>UPDATE</code>/<code>DELETE</code> criam versões novas e marcam as velhas como mortas — o espaço só é reaproveitado pelo <code>VACUUM</code>.</li>
+  <li><code>VACUUM</code> limpa dead tuples sem travar; <code>VACUUM FULL</code> devolve espaço ao disco mas trava a tabela; <code>VACUUM FREEZE</code> protege contra o wraparound de XIDs.</li>
+  <li><code>ANALYZE</code> atualiza as estatísticas (pg_stats) que o planner usa para o <code>EXPLAIN</code> escolher Seq Scan ou Index Scan.</li>
+  <li><code>autovacuum = on</code> faz essa faxina sozinho; nunca desligue em produção (risco de wraparound e planos ruins).</li>
+  <li>Monitore com <code>pg_stat_user_tables</code>: <code>n_dead_tup</code>, <code>last_vacuum</code>, <code>last_autovacuum</code>, <code>last_analyze</code>.</li>
+</ul>
+
+<div class="tip"><strong>Próxima aula:</strong> <a href="particionamento.html">Particionamento de tabelas grandes</a> — quando uma tabela cresce tanto que nem o VACUUM resolve, a solução é dividi-la em fatias (partições) por faixa de valores.</div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js?v=1"></script>
+</body>
+</html>

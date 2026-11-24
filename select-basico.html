@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SELECT básico no PostgreSQL: WHERE, ORDER BY e LIMIT | Guia PostgreSQL</title>
+<meta name="description" content="Como ler dados com SELECT no PostgreSQL: WHERE com operadores (=, &lt;&gt;, &gt;, &lt;, LIKE, IN, AND/OR), ORDER BY ASC/DESC e LIMIT. Exemplos no banco loja_aurora: estado = 'PI' traz Ana Souza, Beto Lima e Eva Nike; ORDER BY preco DESC LIMIT 2 traz Camiseta; preco &lt; 10 traz só Adesivo; tabela inexistente dá relation \"x\" does not exist. Pratique no psql simulado.">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<script>try{history.scrollRestoration="manual"}catch(e){}function z(){window.scrollTo(0,0);document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0}window.addEventListener("DOMContentLoaded",z);window.addEventListener("load",z);window.addEventListener("pageshow",z);window.addEventListener("pagehide",function(){window.scrollTo(0,0);document.documentElement.scrollTop=0;});document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a){var h=a.getAttribute("href")||"";if(/[.]html($|[?#])/.test(h)&&a.host===location.host){window.scrollTo(0,0);document.documentElement.scrollTop=0;}}});</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1><span class="hl">SELECT</span> básico: WHERE, ORDER BY e LIMIT</h1>
+
+<p class="intro"><strong><code>SELECT</code> é o comando de leitura</strong> — o "me traga as fichas que…" do arquivista. Você escolhe as colunas, a tabela, o filtro (<code>WHERE</code>), a ordem (<code>ORDER BY</code>) e o limite (<code>LIMIT</code>). Nesta aula, tudo isso consultando a <code>loja_aurora</code> no psql.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li><code>SELECT colunas FROM tabela;</code> — e <code>*</code> para todas as colunas;</li>
+  <li><code>WHERE</code> com <code>=</code>, <code>&lt;&gt;</code>, <code>&gt;</code>, <code>&lt;</code>, <code>LIKE</code>, <code>IN</code>, <code>AND</code>/<code>OR</code>;</li>
+  <li><code>ORDER BY coluna DESC</code> para ordenar e <code>LIMIT n</code> para cortar;</li>
+  <li>Resultado vazio: <code>(0 rows)</code>;</li>
+  <li>Erro clássico: tabela inexistente → <code>relation "x" does not exist</code>;</li>
+  <li>Praticar no simulador.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>A anatomia da consulta</h2>
+<pre class="file" data-file="consulta.sql">SELECT nome, estado
+FROM clientes
+WHERE estado = 'PI'
+ORDER BY nome
+LIMIT 3;</pre>
+
+<dl class="anatomy">
+  <dt>SELECT nome, estado</dt><dd>as colunas da resposta — use <code>*</code> para todas</dd>
+  <dt>FROM clientes</dt><dd>a tabela (planilha) de onde vêm os dados</dd>
+  <dt>WHERE estado = 'PI'</dt><dd>o filtro: só entram as linhas onde a condição é verdade</dd>
+  <dt>ORDER BY nome</dt><dd>ordena pelo nome em ordem crescente (<code>DESC</code> inverte)</dd>
+  <dt>LIMIT 3</dt><dd>devolve no máximo 3 linhas — mesmo que o filtro ache mais</dd>
+  <dt>;</dt><dd>encerra e executa</dd>
+</dl>
+
+<hr>
+
+<h2>Exemplos no psql</h2>
+<p>Filtro por estado — as 3 fichas de Piauí:</p>
+<pre class="term" data-title="psql — ana@notebook">loja_aurora=&gt; SELECT nome, estado FROM clientes WHERE estado = 'PI';
+   nome    | estado
+-----------+--------
+ Ana Souza | PI
+ Beto Lima | PI
+ Eva Nike  | PI
+(3 rows)</pre>
+<p>Ordenando do mais caro para o mais barato e pegando só os 2 primeiros:</p>
+<pre class="term" data-title="psql — ana@notebook">loja_aurora=&gt; SELECT nome, preco FROM produtos ORDER BY preco DESC LIMIT 2;
+  nome   | preco
+---------+-------
+ Camiseta | 59.90
+ Boné     | 49.90
+(2 rows)</pre>
+<p>Comparação numérica e filtro que não acha nada:</p>
+<pre class="term" data-title="psql — ana@notebook">loja_aurora=&gt; SELECT * FROM produtos WHERE preco &lt; 10;
+ id |  nome   | preco | estoque
+----+---------+-------+---------
+  3 | Adesivo |  4.50 |     200
+(1 row)
+
+loja_aurora=&gt; SELECT * FROM clientes WHERE estado = 'XX';
+ id | nome | email | cidade | estado | criado_em
+----+------+-------+--------+--------+-----------
+(0 rows)</pre>
+
+<hr>
+
+<h2>Operadores do WHERE</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Operador</th><th>Significado</th><th>Exemplo</th></tr>
+<tr><td><code>=</code></td><td>igual</td><td><code>estado = 'PI'</code></td></tr>
+<tr><td><code>&lt;&gt;</code> ou <code>!=</code></td><td>diferente</td><td><code>estado &lt;&gt; 'SP'</code></td></tr>
+<tr><td><code>&gt;</code> <code>&lt;</code> <code>&gt;=</code> <code>&lt;=</code></td><td>comparações</td><td><code>preco &lt; 10</code></td></tr>
+<tr><td><code>LIKE</code></td><td>texto com coringa <code>%</code> (qualquer coisa)</td><td><code>nome LIKE 'A%'</code> (começa com A)</td></tr>
+<tr><td><code>IN (...)</code></td><td>vale um dos valores da lista</td><td><code>estado IN ('PI', 'PE')</code></td></tr>
+<tr><td><code>AND</code> / <code>OR</code></td><td>combina filtros</td><td><code>estado = 'PI' AND id &gt; 1</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Erros clássicos de SELECT</h2>
+<div class="warning">
+<strong>Tabela errada e comando errado</strong>
+<p>Digitar o nome da tabela errado dá <code>ERROR:  relation "nao_existe" does not exist</code> — confira com <code>\dt</code>. E oublier o <code>SELECT</code> (ex.: <code>SELEC * FROM clientes;</code>) dá <code>ERROR:  syntax error at or near "selec"</code>: o SQL é exigente com a escrita.</p>
+</div>
+<pre class="term" data-title="psql — ana@notebook">loja_aurora=&gt; SELECT * FROM nao_existe;
+ERROR:  relation "nao_existe" does not exist
+loja_aurora=&gt; SELEC * FROM clientes;
+ERROR:  syntax error at or near "selec"
+LINE 1: SELEC * FROM clientes;
+        ^</pre>
+<p>Dica: em tabela gigante, <code>SELECT *</code> pode devolver linha demais — prefira colunas específicas e <code>LIMIT</code>.</p>
+
+<hr>
+
+<h2>Pratique</h2>
+<div class="try" data-goal="Eva Nike" data-solucao="SELECT nome, estado FROM clientes WHERE estado = 'PI';">
+<p class="try-task"><strong>Missão:</strong> ache as fichas de Piauí: <code>SELECT nome, estado FROM clientes WHERE estado = 'PI';</code> → a saída inclui <code>Eva Nike</code> e <code>(3 rows)</code>.</p>
+</div>
+
+<div class="try" data-goal="Camiseta" data-solucao="SELECT nome, preco FROM produtos ORDER BY preco DESC LIMIT 2;">
+<p class="try-task"><strong>Missão:</strong> os 2 produtos mais caros: <code>SELECT nome, preco FROM produtos ORDER BY preco DESC LIMIT 2;</code> → o primeiro é a <code>Camiseta</code>.</p>
+</div>
+
+<div class="try" data-goal="Adesivo" data-solucao="SELECT * FROM produtos WHERE preco &lt; 10;">
+<p class="try-task"><strong>Missão:</strong> produtos abaixo de 10 reais: <code>SELECT * FROM produtos WHERE preco &lt; 10;</code> → só o <code>Adesivo</code> (<code>(1 row)</code>).</p>
+</div>
+
+<div class="try" data-goal="does not exist" data-solucao="SELECT * FROM nao_existe;">
+<p class="try-task"><strong>Missão:</strong> consulte uma tabela que não existe: <code>SELECT * FROM nao_existe;</code> → <code>ERROR: relation "nao_existe" does not exist</code>.</p>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>SELECT colunas FROM tabela WHERE filtro ORDER BY coluna DESC LIMIT n;</code></li>
+  <li><code>*</code> = todas as colunas · <code>WHERE</code> filtra · <code>ORDER BY</code> ordena · <code>LIMIT</code> corta.</li>
+  <li>Operadores: <code>=</code>, <code>&lt;&gt;</code>, <code>&gt;</code>, <code>&lt;</code>, <code>LIKE 'A%'</code>, <code>IN (...)</code>, <code>AND</code>/<code>OR</code>.</li>
+  <li>Sem resultado: <code>(0 rows)</code>. Tabela errada: <code>relation "x" does not exist</code>. Comando errado: <code>syntax error</code>.</li>
+</ul>
+
+<div class="tip"><strong>Próxima aula:</strong> <a href="update-delete.html">UPDATE e DELETE com WHERE</a> — corrigir e apagar fichas (com o freio do WHERE!).</div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js?v=1"></script>
+</body>
+</html>

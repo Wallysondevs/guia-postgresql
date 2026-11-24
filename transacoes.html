@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transações: BEGIN, COMMIT e ROLLBACK | Guia PostgreSQL</title>
+<meta name="description" content="Transações no PostgreSQL (tudo ou nada): BEGIN inicia, COMMIT confirma e ROLLBACK desfaz tudo — exemplo clássico de reserva de estoque com UPDATE + INSERT no psql simulado do banco loja_aurora (ana@notebook, PostgreSQL 16). O prompt vira loja_aurora*> durante a transação. ACID explicado.">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<script>try{history.scrollRestoration="manual"}catch(e){}function z(){window.scrollTo(0,0);document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0}window.addEventListener("DOMContentLoaded",z);window.addEventListener("load",z);window.addEventListener("pageshow",z);window.addEventListener("pagehide",function(){window.scrollTo(0,0);document.documentElement.scrollTop=0;});document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a){var h=a.getAttribute("href")||"";if(/[.]html($|[?#])/.test(h)&&a.host===location.host){window.scrollTo(0,0);document.documentElement.scrollTop=0;}}});</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1><span class="hl">Transações</span>: BEGIN, COMMIT e ROLLBACK</h1>
+
+<p class="intro">Imagine a reserva de um produto: o sistema precisa <strong>dar baixa no estoque</strong> <em>e</em> <strong>registrar o pedido</strong> — e o servidor cai entre uma coisa e outra. Resultado: estoque baixou, mas o pedido não existe. Uma <strong>transação</strong> é o pacote <em>"tudo ou nada"</em>: ou todas as operações acontecem, ou nenhuma. No PostgreSQL você controla isso com <code>BEGIN</code>, <code>COMMIT</code> e <code>ROLLBACK</code>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li><code>BEGIN;</code> — inicia a transação (o prompt vira <code>loja_aurora*&gt;</code>);</li>
+  <li><code>COMMIT;</code> — confirma tudo de vez;</li>
+  <li><code>ROLLBACK;</code> — desfaz tudo, voltando ao ponto do <code>BEGIN</code>;</li>
+  <li>O exemplo clássico: reserva de estoque com <code>UPDATE</code> + <code>INSERT</code>;</li>
+  <li>ACID: atomicidade, consistência, isolamento e durabilité.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>BEGIN: nada é definitivo até o COMMIT</h2>
+<p>O <code>BEGIN</code> abre a transação. Repare no detalhe visual: o prompt muda de <code>loja_aurora=&gt;</code> para <code>loja_aurora*&gt;</code> — o <code>*</code> avisa que você está dentro de uma transação e nada foi confirmado ainda:</p>
+<pre class="term" data-title="ana@notebook — psql (PostgreSQL 16.4)">loja_aurora=&gt; BEGIN;
+BEGIN
+loja_aurora*=&gt;</pre>
+
+<hr>
+
+<h2>O exemplo da reserva de estoque</h2>
+<p>Ana vai comprar a camiseta (id 1, estoque 20). A reserva são <strong>duas</strong> operações que precisam acontecer juntas: dar baixa no estoque e criar o pedido:</p>
+<pre class="term" data-title="ana@notebook — psql (PostgreSQL 16.4)">loja_aurora=&gt; BEGIN;
+BEGIN
+loja_aurora*=&gt; UPDATE produtos SET estoque = 19 WHERE id = 1;
+UPDATE 1
+loja_aurora*=&gt; INSERT INTO pedidos (cliente_id) VALUES (1);
+INSERT 0 1
+loja_aurora*=&gt; SELECT estoque FROM produtos WHERE id = 1;
+ estoque
+---------
+      19
+(1 row)</pre>
+<dl class="anatomy">
+  <dt>UPDATE produtos</dt><dd>a tabela que vai mudar.</dd>
+  <dt>SET estoque = 19</dt><dd>a coluna e o novo valor.</dd>
+  <dt>WHERE id = 1</dt><dd>quais linhas mudam — <strong>sem o WHERE, o UPDATE altera a tabela inteira!</strong></dd>
+</dl>
+
+<hr>
+
+<h2>ROLLBACK: deu errado? desfaz tudo</h2>
+<p>Se no meio da reserva deu algum problema (cliente desistiu, pagamento recusado), o <code>ROLLBACK</code> desfaz <strong>todas</strong> as operações desde o <code>BEGIN</code> — é como apertar "desfazer" no editor, mas para o banco inteiro:</p>
+<pre class="term" data-title="ana@notebook — psql (PostgreSQL 16.4)">loja_aurora*=&gt; ROLLBACK;
+ROLLBACK
+loja_aurora=&gt; SELECT estoque FROM produtos WHERE id = 1;
+ estoque
+---------
+      20
+(1 row)</pre>
+<p>O estoque voltou a 20 e o pedido não foi criado — o banco voltou exatamente ao estado de antes do <code>BEGIN</code>.</p>
+
+<div class="try" data-goal="ROLLBACK" data-solucao="ROLLBACK;">
+<p class="try-task"><strong>Missão:</strong> faça uma reserva e desfaça: digite <code>BEGIN;</code>, depois <code>UPDATE produtos SET estoque = 0 WHERE id = 1;</code> e por fim <code>ROLLBACK;</code>. Depois rode <code>SELECT estoque FROM produtos WHERE id = 1;</code> e confirme que voltou a <code>20</code>.</p>
+</div>
+
+<hr>
+
+<h2>COMMIT: agora sim, vale para sempre</h2>
+<p>Se estava tudo certo, o <code>COMMIT</code> grava de vez todas as operações da transação — depois dele não existe "desfazer":</p>
+<pre class="term" data-title="ana@notebook — psql (PostgreSQL 16.4)">loja_aurora=&gt; BEGIN;
+BEGIN
+loja_aurora*=&gt; UPDATE produtos SET estoque = 19 WHERE id = 1;
+UPDATE 1
+loja_aurora*=&gt; COMMIT;
+COMMIT
+loja_aurora=&gt; SELECT estoque FROM produtos WHERE id = 1;
+ estoque
+---------
+      19
+(1 row)</pre>
+
+<div class="try" data-goal="BEGIN" data-solucao="BEGIN;">
+<p class="try-task"><strong>Missão:</strong> inicie uma transação com <code>BEGIN;</code> — repare que o prompt do simulador vira <code>loja_aurora*&gt;</code>, avisando que nada está confirmado ainda.</p>
+</div>
+
+<div class="try" data-goal="COMMIT" data-solucao="COMMIT;">
+<p class="try-task"><strong>Missão:</strong> confirme a reserva de vez: digite <code>BEGIN;</code>, <code>UPDATE produtos SET estoque = 19 WHERE id = 1;</code> e <code>COMMIT;</code>. O psql responde <code>COMMIT</code> e o estoque fica 19 para sempre.</p>
+</div>
+
+<hr>
+
+<h2>Se a conexão cair no meio…</h2>
+<div class="warning">
+<strong>Esqueceu do COMMIT? O PostgreSQL te protege.</strong>
+<p>Se a sessão cair (ou o psql fechar) no meio de uma transação, o banco faz <strong>ROLLBACK automático</strong> — suas operações nunca ficam "pela metade". E se um comando <em>dentro</em> da transação der erro, o PostgreSQL recusa os próximos comandos até você dar <code>ROLLBACK</code> (<code>current transaction is aborted</code>). No PostgreSQL até <code>CREATE TABLE</code> entra na transação: dá para criar a tabela, testar, e dar <code>ROLLBACK</code> para desistir.</p>
+</div>
+
+<h2>ACID: as quatro promessas da transação</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Letra</th><th>Promessa</th><th>No nosso exemplo</th></tr>
+<tr><td><strong>A</strong> — Atomicidade</td><td>tudo ou nada: ou as 2 operações acontecem, ou nenhuma</td><td>estoque baixou <em>e</em> pedido criado — ou volta tudo</td></tr>
+<tr><td><strong>C</strong> — Consistência</td><td>as constraints continuam válidas depois da transação</td><td>pedido sempre aponta para cliente que existe</td></tr>
+<tr><td><strong>I</strong> — Isolamento</td><td>outra sessão não vê a reserva "pela metade"</td><td>só depois do COMMIT o estoque 19 aparece para os outros</td></tr>
+<tr><td><strong>D</strong> — Durabilidade</td><td>depois do COMMIT, está gravado — mesmo se cair a luz</td><td>o <code>COMMIT</code> só volta depois de gravar em disco</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Transação = pacote <strong>"tudo ou nada"</strong>: <code>BEGIN</code> abre, <code>COMMIT</code> confirma, <code>ROLLBACK</code> desfaz.</li>
+  <li>Dentro da transação o prompt vira <code>loja_aurora*&gt;</code> — nada está gravado de vez ainda.</li>
+  <li>Use para operações que precisam nascer juntas: baixa no estoque + pedido, transferência entre contas, etc.</li>
+  <li>Se a conexão cair no meio, o PostgreSQL faz <code>ROLLBACK</code> automático — nunca fica pela metade.</li>
+  <li>ACID: atomicidade, consistência, isolamento e durabilidade.</li>
+</ul>
+
+<div class="tip"><strong>Próxima aula:</strong> <a href="usuarios-permissoes.html">Usuários e permissões: CREATE USER, ROLES e GRANT</a> — agora que o banco está seguro e inteiro, vamos controlar <em>quem</em> pode mexer nele.</div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js?v=1"></script>
+</body>
+</html>

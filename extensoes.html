@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Extensões do PostgreSQL: pg_trgm, PostGIS, uuid-ossp | Guia PostgreSQL</title>
+<meta name="description" content="Instale extensões no PostgreSQL com CREATE EXTENSION: pg_trgm para busca de texto aproximada (operador % e índice GIN com gin_trgm_ops), uuid-ossp para gerar UUIDs (uuid_generate_v4) como chave primária, PostGIS para dados geográficos (geometry, ST_Distance, operadores de distância), além de pg_stat_statements, citext, unaccent, hstore e pgcrypto. Veja pg_available_extensions e os riscos de instalar código C no servidor.">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<script>try{history.scrollRestoration="manual"}catch(e){}function z(){window.scrollTo(0,0);document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0}window.addEventListener("DOMContentLoaded",z);window.addEventListener("load",z);window.addEventListener("pageshow",z);window.addEventListener("pagehide",function(){window.scrollTo(0,0);document.documentElement.scrollTop=0;});document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a){var h=a.getAttribute("href")||"";if(/[.]html($|[?#])/.test(h)&&a.host===location.host){window.scrollTo(0,0);document.documentElement.scrollTop=0;}}});</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1><span class="hl">Extensões</span>: pg_trgm, PostGIS, uuid-ossp e outras</h1>
+
+<p class="intro">Pense nas extensões do PostgreSQL como os <strong>aplicativos que você instala no celular</strong>: o sistema vem básico, e cada extensão adiciona uma capacidade nova — busca aproximada de texto, mapas, UUIDs, estatísticas de queries. Instalar é um comando só: <code>CREATE EXTENSION</code>. Nesta aula: as extensões que mais caem em produção e o cuidado com código que roda <em>dentro</em> do servidor.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li><code>CREATE EXTENSION</code> e como listar as disponíveis (<code>pg_available_extensions</code>);</li>
+  <li><code>uuid-ossp</code>: gerar UUIDs com <code>uuid_generate_v4()</code> para chaves primárias não sequenciais;</li>
+  <li><code>pg_trgm</code>: busca aproximada de texto com o operador <code>%</code> e índice GIN (<code>gin_trgm_ops</code>) para <code>LIKE '%…%'</code>;</li>
+  <li><code>PostGIS</code>: tipos <code>geometry</code>/<code>geography</code>, funções <code>ST_Distance</code> e busca "perto de mim";</li>
+  <li>Outras úteis: <code>pg_stat_statements</code>, <code>citext</code>, <code>unaccent</code>, <code>hstore</code>, <code>pgcrypto</code>;</li>
+  <li>O risco: extensões em C rodam dentro do processo do banco — só instale de fontes confiáveis;</li>
+  <li>Praticar busca de texto no psql simulado do banco <code>loja_aurora</code>.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Instalando uma extensão</h2>
+<p>Todas as extensões disponíveis no servidor aparecem na visão <code>pg_available_extensions</code>. Instalar é simples — e várias já vêm "prontas para instalar" na instalação padrão:</p>
+<pre class="term">loja_aurora=&gt; SELECT name, default_version, installed_version FROM pg_available_extensions
+              WHERE name IN ('pg_trgm','uuid-ossp','postgis','pg_stat_statements','citext') ORDER BY name;
+      name        | default_version | installed_version
+------------------+-----------------+-------------------
+ citext           | 1.6             | 
+ pg_stat_statements | 1.10          | 
+ pg_trgm          | 1.6             | 
+ postgis          | 3.4.2           | 
+ uuid-ossp        | 1.1             | 
+(5 rows)
+loja_aurora=&gt; CREATE EXTENSION pg_trgm;
+CREATE EXTENSION
+loja_aurora=&gt; CREATE EXTENSION "uuid-ossp";
+CREATE EXTENSION
+loja_aurora=&gt; \dx
+                 List of installed extensions
+    Name     | Version |   Schema   |        Description
+-------------+---------+------------+----------------------------
+ pg_trgm     | 1.6     | public     | text similarity… trigram
+ uuid-ossp   | 1.1     | public     | generate universally unique identifiers</pre>
+<p>O meta-comando <code>\dx</code> lista as extensões instaladas; <code>DROP EXTENSION pg_trgm;</code> remove (com <code>CASCADE</code> se objetos dependerem dela). Algumas extensões exigem superuser na criação (PostGIS, por exemplo) e algumas precisam de configuração extra no <code>postgresql.conf</code> — <code>pg_stat_statements</code>, por exemplo, exige <code>shared_preload_libraries = 'pg_stat_statements'</code> e restart.</p>
+
+<hr>
+
+<h2>uuid-ossp: chaves primárias que não revelam sequência</h2>
+<p>Em vez de <code>id = 1, 2, 3…</code> (que revela quantos registros existem e facilita chute de URLs), use UUIDs:</p>
+<pre class="term">loja_aurora=&gt; CREATE TABLE links_publicos (
+loja_aurora(&gt;   id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+loja_aurora(&gt;   titulo text
+loja_aurora(&gt; );
+CREATE TABLE
+loja_aurora=&gt; INSERT INTO links_publicos (titulo) VALUES ('relatorio 2026');
+INSERT 0 1
+loja_aurora=&gt; SELECT * FROM links_publicos;
+                  id                  |     titulo
+--------------------------------------+------------------
+ 3f2a9c1e-7b4d-4e5f-9a0b-1c2d3e4f5a6b | relatorio 2026
+(1 row)</pre>
+<p>Sem o <code>DEFAULT uuid_generate_v4()</code>, cada <code>INSERT</code> gera um id aleatório sozinho — bom para segurança (URLs impossíveis de adivinhar) e para sharding. (Em PG 13+ dá para usar a função built-in <code>gen_random_uuid()</code>, que não precisa de extensão.)</p>
+
+<hr>
+
+<h2>pg_trgm: busca de texto aproximada e rápida</h2>
+<p>O problema do <code>LIKE '%Souza%'</code> é que ele não usa índice B-tree — o banco varre a tabela inteira. A extensão <strong>pg_trgm</strong> (trigramas: sílabas de 3 letras) cria um índice GIN que até o <code>LIKE '%…%'</code> consegue usar, e ainda mede <strong>similaridade</strong> entre textos com o operador <code>%</code>:</p>
+<pre class="term">loja_aurora=&gt; CREATE INDEX idx_clientes_nome_trgm ON clientes USING gin (nome gin_trgm_ops);
+CREATE INDEX
+loja_aurora=&gt; SELECT nome FROM clientes WHERE nome LIKE '%Souza%';
+   nome
+-----------
+ Ana Souza
+(1 row)
+loja_aurora=&gt; SELECT nome, similarity(nome, 'Ana Souza') AS similaridade
+loja_aurora-&gt;   FROM clientes ORDER BY nome % 'Ana Souza' DESC LIMIT 3;
+   nome    |   similaridade
+-----------+------------------
+ Ana Souza |                1
+ Eva Nike  | 0.15384615384615385
+ Beto Lima | 0.11111111111111111
+(3 rows)</pre>
+<p>O operador <code>%</code> (similarity) e <code>ORDER BY nome % 'Ana Souza'</code> ordenam pelo mais parecido — é a base da busca "você quis dizer…?" dos mecanismos de busca.</p>
+
+<hr>
+
+<h2>PostGIS: o banco vira mapa</h2>
+<p>O <strong>PostGIS</strong> transforma o PostgreSQL no banco espacial mais usado do mundo: tipos <code>geometry</code> (plano) e <code>geography</code> (esfera terrestre, com lat/long reais), índices GiST e operadores de distância:</p>
+<pre class="term">loja_aurora=&gt; CREATE EXTENSION postgis;
+CREATE EXTENSION
+loja_aurora=&gt; ALTER TABLE clientes ADD COLUMN localizacao geography(Point, 4326);
+ALTER TABLE
+loja_aurora=&gt; UPDATE clientes SET localizacao = ST_SetSRID(ST_MakePoint(-42.79, -5.05), 4326) WHERE id = 1;
+UPDATE 1
+loja_aurora=&gt; SELECT nome, ST_Distance(localizacao, ST_SetSRID(ST_MakePoint(-42.80, -5.06), 4326)) AS metros
+loja_aurora-&gt;   FROM clientes ORDER BY localizacao &lt;-&gt; ST_SetSRID(ST_MakePoint(-42.80, -5.06), 4326) LIMIT 3;
+   nome    |      metros
+-----------+------------------
+ Ana Souza | 1247.83…
+ Eva Nike  | 1251.02…
+ Beto Lima | 9876.54…
+(3 rows)</pre>
+<p>O operador <code>&lt;-&gt;</code> (KNN) com índice GiST traz os pontos <strong>mais próximos primeiro</strong> sem varrer a tabela — é o "clientes perto de mim" do iFood/99. Ideal para mapas, rotas, entregas e qualquer dado com latitude/longitude.</p>
+
+<hr>
+
+<h2>Outras extensões que valem o clique</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Extensão</th><th>O que faz</th><th>Exemplo</th></tr>
+<tr><td><code>pg_stat_statements</code></td><td>Estatísticas de <em>todas</em> as queries executadas (tempo total, chamadas)</td><td>Achar a query mais lenta do sistema</td></tr>
+<tr><td><code>citext</code></td><td>Tipo de texto <em>case-insensitive</em></td><td><code>email citext</code> — <code>'Ana@Email.com' = 'ana@email.com'</code></td></tr>
+<tr><td><code>unaccent</td><td>Remove acentos na comparação</td><td>Buscar "jose" e achar "José"</td></tr>
+<tr><td><code>hstore</td><td>Pares chave→valor numa célula só</td><td>Atributos livres de produtos sem schema novo</td></tr>
+<tr><td><code>pgcrypto</td><td>Hash e criptografia</td><td><code>crypt('senha', gen_salt('bf'))</code> para guardar senhas</td></tr>
+<tr><td><code>pg_trgm</code></td><td>Similaridade de texto + índice para <code>LIKE '%…%'</code></td><td>Busca aproximada ("Souza" acha "Ana Souza")</td></tr>
+<tr><td><code>uuid-ossp</td><td>Geradores de UUID</td><td><code>uuid_generate_v4()</code> como PK</td></tr>
+<tr><td><code>postgis</td><td>Dados geográficos</td><td><code>geometry</code>, <code>ST_Distance</code>, operador <code>&lt;-&gt;</code></td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong>Cuidado:</strong> a maioria das extensões é código em C que roda <em>dentro do processo do servidor</em> — um bug numa extensão pode derrubar o PostgreSQL inteiro ou abrir brecha de segurança. Só instale extensões de fontes confiáveis (pacotes oficiais do PostgreSQL, por exemplo <code>apt install postgresql-16-postgis-3</code>), mantenha atualizado junto com o servidor, e dê <code>CREATE EXTENSION</code> só para roles de confiança (várias exigem superuser).
+</div>
+
+<hr>
+
+<h2>Experimente: busca de texto no simulador</h2>
+
+<div class="try" data-goal="Ana Souza" data-solucao="SELECT nome FROM clientes WHERE nome LIKE 'A%';">
+<p class="try-task"><strong>Missão:</strong> busca por prefixo (usa índice B-tree normal): digite <code>SELECT nome FROM clientes WHERE nome LIKE 'A%';</code> e veja <code>Ana Souza</code>.</p>
+</div>
+
+<div class="try" data-goal="Ana Souza" data-solucao="SELECT nome FROM clientes WHERE nome LIKE '%Souza%';">
+<p class="try-task"><strong>Missão:</strong> agora o caso que o pg_trgm resolve: <code>SELECT nome FROM clientes WHERE nome LIKE '%Souza%';</code> — sem trigramas essa consulta faz <code>Seq Scan</code>; com o índice GIN do pg_trgm ela fica rápida mesmo em tabela gigante.</p>
+</div>
+
+<div class="try" data-goal="Eva Nike" data-solucao="SELECT nome FROM clientes WHERE estado = 'PI' ORDER BY nome DESC LIMIT 1;">
+<p class="try-task"><strong>Missão:</strong> combine filtro e ordenação: <code>SELECT nome FROM clientes WHERE estado = 'PI' ORDER BY nome DESC LIMIT 1;</code> — a saída mostra <code>Eva Nike</code>.</p>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Extensão = plugin do servidor: <code>CREATE EXTENSION nome;</code>, lista com <code>\dx</code>, disponíveis em <code>pg_available_extensions</code>.</li>
+  <li><code>uuid-ossp</code>: <code>uuid_generate_v4()</code> para PKs não sequenciais (ou <code>gen_random_uuid()</code> built-in no PG 13+).</li>
+  <li><code>pg_trgm</code>: índice GIN <code>gin_trgm_ops</code> deixa <code>LIKE '%…%'</code> usar índice; operador <code>%</code> mede similaridade.</li>
+  <li><code>PostGIS</code>: tipos <code>geometry</code>/<code>geography</code>, <code>ST_Distance</code>, KNN com <code>&lt;-&gt;</code> — banco vira mapa.</li>
+  <li>Também úteis: <code>pg_stat_statements</code>, <code>citext</code>, <code>unaccent</code>, <code>hstore</code>, <code>pgcrypto</code>.</li>
+  <li>Extensões em C rodam dentro do servidor: só instale de fontes confiáveis e mantenha atualizadas.</li>
+</ul>
+
+<div class="tip"><strong>Próxima aula:</strong> <a href="projetos.html">Projetos</a> — hora de juntar tudo: monte a loja virtual completa (clientes, produtos, pedidos) aplicando o que você aprendeu neste nível avançado.</div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js?v=1"></script>
+</body>
+</html>

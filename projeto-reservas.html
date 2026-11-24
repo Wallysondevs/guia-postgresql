@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Projeto 3 — Sistema de reservas com controle de conflito (transações) | Guia PostgreSQL</title>
+<meta name="description" content="Projeto prático de PostgreSQL: sistema de reservas onde duas pessoas não podem pegar o último exemplar. Passo a passo com transação ACID (BEGIN, UPDATE de estoque, INSERT da reserva, COMMIT), ROLLBACK para desfazer, SELECT ... FOR UPDATE para travar a linha e evitar o conflito (double booking). Missões no psql simulado: BEGIN, UPDATE 1, COMMIT e ROLLBACK no banco loja_aurora.">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<script>try{history.scrollRestoration="manual"}catch(e){}function z(){window.scrollTo(0,0);document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0}window.addEventListener("DOMContentLoaded",z);window.addEventListener("load",z);window.addEventListener("pageshow",z);window.addEventListener("pagehide",function(){window.scrollTo(0,0);document.documentElement.scrollTop=0;});document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a){var h=a.getAttribute("href")||"";if(/[.]html($|[?#])/.test(h)&&a.host===location.host){window.scrollTo(0,0);document.documentElement.scrollTop=0;}}});</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Projeto 3 — <span class="hl">reservas</span> com controle de conflito</h1>
+
+<p class="intro">Imagine o último exemplar de um produto: dois clientes clicam "reservar" ao mesmo tempo. Sem cuidado, os dois acham que conseguiram — é o <strong>conflito de reserva</strong> (double booking). A arma do PostgreSQL contra isso é a <strong>transação</strong>: um grupo de comandos que só vale inteiro. Analogia do dia a dia: pagar no cartão — ou debita <em>e</em> emite o cupom, ou nada acontece. Nunca metade.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li><code>BEGIN</code> abre a transação, <code>COMMIT</code> salva tudo, <code>ROLLBACK</code> desfaz tudo.</li>
+  <li>O prompt muda para <code>loja_aurora*</code> (asterisco) enquanto a transação está aberta.</li>
+  <li><code>SELECT … FOR UPDATE</code> trava a linha e segura a segunda reserva até a primeira terminar.</li>
+  <li>Por que <code>UPDATE</code>/<code>DELETE</code> sem <code>WHERE</code> dentro de transação ainda dá para desfazer — e fora dela, não.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Passo 1 — o modelo da reserva</h2>
+<p>Além das tabelas da loja, o sistema de reservas precisa registrar <strong>quem reservou o quê</strong>:</p>
+<pre class="file" data-file="reservas.sql">CREATE TABLE reservas (
+  id          integer PRIMARY KEY,
+  produto_id  integer REFERENCES produtos(id),
+  cliente_id  integer REFERENCES clientes(id),
+  qtd         integer NOT NULL CHECK (qtd &gt; 0),
+  status      text DEFAULT 'ativa',   -- ativa | usada | cancelada
+  criada_em   timestamp DEFAULT now(),
+  UNIQUE (produto_id, cliente_id, status)  -- não deixa reservar 2x o mesmo
+);</pre>
+
+<hr>
+
+<h2>Passo 2 — reservar dentro de uma transação</h2>
+<p>A reserva mexe em <strong>duas tabelas ao mesmo tempo</strong> (diminui o estoque e cria a reserva). Se a segunda falhar, a primeira tem que voltar atrás — por isso tudo vai dentro de <code>BEGIN … COMMIT</code>:</p>
+<pre class="term">loja_aurora=&gt; BEGIN;
+BEGIN
+loja_aurora*&gt; UPDATE produtos SET estoque = estoque - 1 WHERE id = 1;
+UPDATE 1
+loja_aurora*&gt; INSERT INTO reservas (produto_id, cliente_id, qtd) VALUES (1, 3, 1);
+INSERT 0 1
+loja_aurora*&gt; COMMIT;
+COMMIT</pre>
+<p>Repare no prompt: o <code>*</code> no lugar do <code>=</code> avisa que a transação está <strong>aberta e ainda não salva</strong>. Só o <code>COMMIT</code> grava de verdade.</p>
+
+<div class="try" data-goal="BEGIN" data-solucao="BEGIN;">
+<p class="try-task"><strong>Missão 1:</strong> abra uma transação no simulador: <code>BEGIN;</code> — a saída mostra <code>BEGIN</code> e o prompt vira <code>loja_aurora*&gt;</code>.</p>
+</div>
+
+<div class="try" data-goal="UPDATE 1" data-solucao="UPDATE produtos SET estoque = 99 WHERE id = 1;">
+<p class="try-task"><strong>Missão 2:</strong> dentro da transação, baixe o estoque: <code>UPDATE produtos SET estoque = 99 WHERE id = 1;</code> — a confirmação é <code>UPDATE 1</code> (só uma linha mudou).</p>
+</div>
+
+<div class="try" data-goal="INSERT 0 1" data-solucao="INSERT INTO pedidos (cliente_id, status) VALUES (2, 'pendente');">
+<p class="try-task"><strong>Missão 3:</strong> crie um pedido dentro da transação: <code>INSERT INTO pedidos (cliente_id, status) VALUES (2, 'pendente');</code> — <code>INSERT 0 1</code> na saída.</p>
+</div>
+
+<hr>
+
+<h2>Passo 3 — ROLLBACK: desfaz tudo</h2>
+<p>Se qualquer passo der errado (cliente não existe, estoque zerado, conexão caiu no meio), é só <code>ROLLBACK</code>: o banco volta exatamente para o estado de antes do <code>BEGIN</code>:</p>
+<pre class="term">loja_aurora=&gt; BEGIN;
+BEGIN
+loja_aurora*&gt; UPDATE produtos SET estoque = 0 WHERE id = 1;
+UPDATE 1
+loja_aurora*&gt; DELETE FROM pedidos WHERE id = 3;
+DELETE 1
+loja_aurora*&gt; ROLLBACK;
+ROLLBACK
+loja_aurora=&gt; SELECT estoque FROM produtos WHERE id = 1;
+ estoque
+---------
+      20
+(1 row)
+loja_aurora=&gt; SELECT COUNT(*) FROM pedidos;
+ count
+-------
+     3
+(1 row)</pre>
+<p>O estoque voltou para 20 e o pedido 3 continua lá: <strong>nada do que aconteceu dentro da transação foi gravado</strong>.</p>
+
+<div class="try" data-goal="ROLLBACK" data-solucao="ROLLBACK;">
+<p class="try-task"><strong>Missão 4:</strong> desfaça a transação aberta: <code>ROLLBACK;</code> — a saída mostra <code>ROLLBACK</code> e o prompt volta ao normal.</p>
+</div>
+
+<div class="try" data-goal="(3 rows)" data-solucao="SELECT * FROM pedidos;">
+<p class="try-task"><strong>Missão 5:</strong> confirme que o ROLLBACK desfez o INSERT da missão 3: <code>SELECT * FROM pedidos;</code> — voltaram as <code>(3 rows)</code> originais.</p>
+</div>
+
+<div class="try" data-goal="no transaction in progress" data-solucao="COMMIT;">
+<p class="try-task"><strong>Missão 6:</strong> rode <code>COMMIT;</code> <strong>sem</strong> ter aberto um <code>BEGIN;</code> — o servidor avisa <code>WARNING: there is no transaction in progress</code> e nada é gravado. (Para ver o <code>COMMIT</code> de verdade, abra <code>BEGIN;</code> antes e rode um comando qualquer dentro.)</p>
+</div>
+
+<hr>
+
+<h2>Passo 4 — o controle de conflito: FOR UPDATE</h2>
+<p>O cenário clássico: o produto 4 (Poster) tem <strong>estoque 0</strong>… quer dizer, imagine estoque 1 e dois clientes reservando ao mesmo tempo. Sem trava, as duas sessões leem "estoque = 1" e as duas atualizam para 0 — venderam 2. Com <code>SELECT … FOR UPDATE</code>, a primeira sessão <strong>trava a linha</strong> e a segunda fica <strong>esperando no lock</strong> até o <code>COMMIT</code>:</p>
+<pre class="term">-- sessão 1 (Ana)
+loja_aurora=&gt; BEGIN;
+loja_aurora*&gt; SELECT estoque FROM produtos WHERE id = 1 FOR UPDATE;
+ estoque
+---------
+      20
+(1 row)
+loja_aurora*&gt; UPDATE produtos SET estoque = estoque - 1 WHERE id = 1;
+UPDATE 1
+loja_aurora*&gt; COMMIT;
+COMMIT
+
+-- sessão 2 (Beto): o SELECT … FOR UPDATE fica ESPERANDO até a sessão 1 dar COMMIT
+-- e aí ele lê o estoque JÁ ATUALIZADO (19), não o valor antigo (20)</pre>
+
+<div class="warning"><strong>Erro real — lock:</strong> se uma sessão esquece o <code>COMMIT</code>, a linha fica travada e a outra sessão fica parada esperando (<code>lock not available</code> / <code>deadlock detected</code>). <strong>Solução:</strong> na sessão que travou, rode <code>COMMIT;</code> ou <code>ROLLBACK;</code>. Veja <a href="problemas.html">Problemas comuns</a>.</div>
+
+<div class="note"><strong>Regra de bolso:</strong> toda operação que mexe em mais de uma tabela (ou que depende de uma leitura anterior) vai dentro de <code>BEGIN … COMMIT</code>. E toda leitura que precisa ser "a verdade do momento" para decidir algo usa <code>FOR UPDATE</code>.</div>
+
+<hr>
+
+<h2>Resumo do projeto</h2>
+<ul>
+  <li><code>BEGIN</code> abre, <code>COMMIT</code> grava, <code>ROLLBACK</code> desfaz — o prompt <code>*</code> avisa que está aberto.</li>
+  <li>Transação = ACID: ou tudo acontece, ou nada (atomicidade).</li>
+  <li><code>SELECT … FOR UPDATE</code> trava a linha e serializa reservas concorrentes — Adeus, double booking.</li>
+  <li>Esqueceu o <code>COMMIT</code>? A linha fica travada para as outras sessões até você fechar a transação.</li>
+</ul>
+
+<div class="tip"><strong>Próxima aula:</strong> <a href="projeto-api-node.html">Projeto 4 — API Node.js + pg com pool de conexões</a> — conecte uma aplicação de verdade ao banco <code>loja_aurora</code>.</div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js?v=1"></script>
+</body>
+</html>

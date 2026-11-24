@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CREATE DATABASE e CREATE TABLE | Guia PostgreSQL</title>
+<meta name="description" content="Como criar banco e tabela no PostgreSQL: CREATE DATABASE loja_teste; + \\c para trocar de banco, e CREATE TABLE com colunas e tipos (exemplo completo da tabela clientes da loja_aurora, com PRIMARY KEY, NOT NULL e UNIQUE). O erro relation \"clientes\" already exists ao recriar. No simulador: CREATE DATABASE devolve CREATE DATABASE, banco novo + \\dt mostra \"Did not find any relations\".">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<script>try{history.scrollRestoration="manual"}catch(e){}function z(){window.scrollTo(0,0);document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0}window.addEventListener("DOMContentLoaded",z);window.addEventListener("load",z);window.addEventListener("pageshow",z);window.addEventListener("pagehide",function(){window.scrollTo(0,0);document.documentElement.scrollTop=0;});document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a){var h=a.getAttribute("href")||"";if(/[.]html($|[?#])/.test(h)&&a.host===location.host){window.scrollTo(0,0);document.documentElement.scrollTop=0;}}});</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1><span class="hl">CREATE DATABASE</span> e CREATE TABLE</h1>
+
+<p class="intro">Agora que você sabe passear pelo psql, vamos <strong>criar</strong> coisas: primeiro o <strong>arquivo</strong> (<code>CREATE DATABASE</code>) e depois a <strong>planilha</strong> dentro dele (<code>CREATE TABLE</code>). É aqui que a loja <code>loja_aurora</code> nasceu — e é aqui que você vai criar o seu banco de testes.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li><code>CREATE DATABASE loja_teste;</code> e <code>\c</code> para trocar de banco;</li>
+  <li><code>CREATE TABLE</code> com a lista de colunas e seus tipos;</li>
+  <li><code>PRIMARY KEY</code>, <code>NOT NULL</code> e <code>UNIQUE</code> na prática;</li>
+  <li>O erro <code>relation "x" already exists</code> ao criar de novo;</li>
+  <li>Banco novo é banco vazio: <code>\dt</code> → <code>Did not find any relations.</code></li>
+  <li>Praticar no simulador.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Criando o "arquivo": CREATE DATABASE</h2>
+<p>Criar um banco é como criar um arquivo novo no servidor. Depois de criar, você <strong>precisa entrar nele</strong> com <code>\c</code> — o psql só cria, não conecta sozinho:</p>
+<pre class="term" data-title="psql — ana@notebook">postgres=&gt; CREATE DATABASE loja_teste;
+CREATE DATABASE
+postgres=&gt; \c loja_teste
+You are now connected to database "loja_teste" as user "ana".
+loja_teste=&gt; \dt
+Did not find any relations.</pre>
+<p>Banco criado e vazio: o <code>\dt</code> não achou nenhuma planilha. Agora vamos criar a primeira tabela dentro dele:</p>
+<pre class="term" data-title="psql — ana@notebook">loja_teste=&gt; CREATE TABLE categorias (
+loja_teste-&gt;   id integer PRIMARY KEY,
+loja_teste-&gt;   nome text NOT NULL
+loja_teste-&gt; );
+CREATE TABLE
+loja_teste=&gt; \dt
++--------------+--------------+
+| Name         | Owner        |
++--------------+--------------+
+| categorias   | ana          |
++--------------+--------------+
+(1 row)</pre>
+<p>Repare no psql: enquanto o comando não tem <code>;</code>, o prompt vira <code>loja_teste-&gt;</code> (com <code>-</code>) e espera a próxima linha. O <code>;</code> é o sinal de "pode executar".</p>
+
+<hr>
+
+<h2>A planilha clientes da loja_aurora</h2>
+<p>O banco <code>loja_aurora</code> tem 4 tabelas. A principal é a <code>clientes</code>, criada assim:</p>
+<pre class="file" data-file="schema.sql">CREATE TABLE clientes (
+  id         integer PRIMARY KEY,
+  nome       text NOT NULL,
+  email      text UNIQUE,
+  cidade     text,
+  estado     char(2),
+  criado_em  date DEFAULT CURRENT_DATE
+);</pre>
+
+<dl class="anatomy">
+  <dt>CREATE TABLE</dt><dd>o comando que cria uma tabela nova</dd>
+  <dt>clientes</dt><dd>o nome da tabela — a convenção é plural e minúsculo</dd>
+  <dt>( ... )</dt><dd>a lista de colunas, entre parênteses, separada por vírgula</dd>
+  <dt>nome text NOT NULL</dt><dd>uma coluna: <code>nome</code>, do tipo <code>text</code>, obrigatória (não pode ficar vazia)</dd>
+  <dt>id integer PRIMARY KEY</dt><dd>a chave primária: um número único que identifica cada ficha (linha)</dd>
+  <dt>email text UNIQUE</dt><dd>o email não pode se repetir em duas linhas</dd>
+  <dt>;</dt><dd>o ponto-e-vírgula encerra e executa o comando</dd>
+</dl>
+
+<hr>
+
+<h2>As 4 planilhas da loja</h2>
+<pre class="term" data-title="psql — ana@notebook">loja_aurora=&gt; \dt
++--------------+--------------+
+| Name         | Owner        |
++--------------+--------------+
+| clientes     | ana          |
+| produtos     | ana          |
+| pedidos      | ana          |
+| itens_pedido | ana          |
++--------------+--------------+
+(4 rows)</pre>
+<ul>
+  <li><code>clientes</code> — as fichas dos clientes (Ana Souza, Beto Lima…);</li>
+  <li><code>produtos</code> — o catálogo (Camiseta, Caneca, Adesivo…) com preço e estoque;</li>
+  <li><code>pedidos</code> — cada pedido liga um cliente (<code>cliente_id</code>) a uma data e um status;</li>
+  <li><code>itens_pedido</code> — os itens de cada pedido, ligando pedido e produto.</li>
+</ul>
+
+<hr>
+
+<h2>Quando o banco barra: tabela já existe</h2>
+<div class="warning">
+<strong><code>CREATE TABLE</code> em nome repetido dá erro</strong>
+<p>Se você tentar criar <code>clientes</code> de novo no <code>loja_aurora</code>, o PostgreSQL protege seus dados e responde <code>ERROR:  relation "clientes" already exists</code>. Para apagar de verdade existe o <code>DROP TABLE clientes;</code> — mas ele <strong>apaga a tabela e todos os dados</strong>, sem lixeira. Cuidado.</p>
+</div>
+<pre class="term" data-title="psql — ana@notebook">loja_aurora=&gt; CREATE TABLE clientes (id integer PRIMARY KEY, nome text);
+ERROR:  relation "clientes" already exists</pre>
+
+<hr>
+
+<h2>Pratique</h2>
+<div class="try" data-goal="CREATE DATABASE" data-solucao="CREATE DATABASE loja_teste;">
+<p class="try-task"><strong>Missão:</strong> crie um banco novo: digite <code>CREATE DATABASE loja_teste;</code>. A confirmação é <code>CREATE DATABASE</code>.</p>
+</div>
+
+<div class="try" data-goal="Did not find any relations" data-solucao="\c loja_teste">
+<p class="try-task"><strong>Missão:</strong> entre no banco novo com <code>\c loja_teste</code> e rode <code>\dt</code> — banco vazio, <code>Did not find any relations.</code> (depois volte com <code>\c loja_aurora</code>).</p>
+</div>
+
+<div class="try" data-goal="CREATE TABLE" data-solucao="CREATE TABLE categorias (id integer PRIMARY KEY, nome text NOT NULL);">
+<p class="try-task"><strong>Missão:</strong> crie sua primeira tabela: <code>CREATE TABLE categorias (id integer PRIMARY KEY, nome text NOT NULL);</code> → <code>CREATE TABLE</code>. Rode <code>\dt</code> para ver a <code>categorias</code> na lista.</p>
+</div>
+
+<div class="try" data-goal="already exists" data-solucao="CREATE TABLE clientes (id integer PRIMARY KEY, nome text);">
+<p class="try-task"><strong>Missão:</strong> tente recriar a tabela <code>clientes</code>: <code>CREATE TABLE clientes (id integer PRIMARY KEY, nome text);</code>. O banco barra: <code>already exists</code>.</p>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>CREATE DATABASE nome;</code> cria o arquivo; <code>\c nome</code> entra nele.</li>
+  <li><code>CREATE TABLE nome (coluna tipo restrições, ...);</code> cria a planilha; o <code>;</code> executa.</li>
+  <li><code>PRIMARY KEY</code> = identificador único da linha · <code>NOT NULL</code> = obrigatória · <code>UNIQUE</code> = não repete.</li>
+  <li>Criar de novo dá <code>relation "x" already exists</code>; <code>DROP TABLE</code> apaga tudo — cuidado.</li>
+</ul>
+
+<div class="tip"><strong>Próxima aula:</strong> <a href="tipos-de-dados.html">Tipos de dados: texto, número, data, booleano e JSON</a> — o que pode entrar em cada campo da ficha (<code>text</code>, <code>integer</code>, <code>numeric</code>, <code>date</code>, <code>boolean</code>, <code>jsonb</code>).</div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js?v=1"></script>
+</body>
+</html>

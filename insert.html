@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>INSERT no PostgreSQL: inserindo linhas nas tabelas | Guia PostgreSQL</title>
+<meta name="description" content="Como inserir linhas com INSERT INTO ... VALUES no PostgreSQL, com e sem a lista de colunas, e o id serial que se preenche sozinho. Erros reais: email duplicado (duplicate key value violates unique constraint) e pedido de cliente inexistente (foreign key constraint). No simulador: INSERT devolve INSERT 0 1 e o SELECT de conférence mostra (1 row).">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<script>try{history.scrollRestoration="manual"}catch(e){}function z(){window.scrollTo(0,0);document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0}window.addEventListener("DOMContentLoaded",z);window.addEventListener("load",z);window.addEventListener("pageshow",z);window.addEventListener("pagehide",function(){window.scrollTo(0,0);document.documentElement.scrollTop=0;});document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a){var h=a.getAttribute("href")||"";if(/[.]html($|[?#])/.test(h)&&a.host===location.host){window.scrollTo(0,0);document.documentElement.scrollTop=0;}}});</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1><span class="hl">INSERT</span>: preenchendo uma ficha nova</h1>
+
+<p class="intro">Tabela criada, hora de arquivar fichas: <strong><code>INSERT</code> coloca uma linha nova na planilha</strong>. A ideia é a de preencher um formulário — você diz a tabela, as colunas e os valores, na mesma ordem. Vamos colocar o Zeca Silva na tabela <code>clientes</code> da <code>loja_aurora</code>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li><code>INSERT INTO tabela (colunas) VALUES (valores);</code> — com a lista de colunas;</li>
+  <li>Sem a lista: o <code>VALUES</code> preenche <strong>todas</strong> as colunas, na ordem do <code>\d</code>;</li>
+  <li>O <code>id</code> (PRIMARY KEY serial) se preenche sozinho;</li>
+  <li>Erros reais do banco: <code>duplicate key ... unique constraint</code> (email repetido) e <code>foreign key constraint</code> (pedido de cliente que não existe);</li>
+  <li>Conferir com <code>SELECT</code> depois do <code>INSERT 0 1</code>.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>A anatomia do INSERT</h2>
+<pre class="file" data-file="insert.sql">INSERT INTO clientes (nome, email, cidade, estado)
+VALUES ('Zeca Silva', 'zeca@email.com', 'Teresina', 'PI');</pre>
+
+<dl class="anatomy">
+  <dt>INSERT INTO</dt><dd>o comando de inserção</dd>
+  <dt>clientes</dt><dd>a tabela (planilha) que recebe a ficha nova</dd>
+  <dt>(nome, email, cidade, estado)</dt><dd>as colunas que você vai preencher — a lista é opcional; sem ela, o VALUES preenche TODAS as colunas na ordem da tabela</dd>
+  <dt>VALUES (...)</dt><dd>os valores, <strong>na mesma ordem</strong> das colunas; texto vai entre aspas simples</dd>
+  <dt>;</dt><dd>encerra e executa — a resposta é <code>INSERT 0 1</code> (1 linha inserida)</dd>
+</dl>
+
+<hr>
+
+<h2>O id aparece sozinho</h2>
+<p>Note que não passamos o <code>id</code>: como ele é <code>PRIMARY KEY</code> com <code>serial</code>, o PostgreSQL gera o próximo número (6, no caso). Veja a ficha arquivada:</p>
+<pre class="term" data-title="psql — ana@notebook">loja_aurora=&gt; INSERT INTO clientes (nome, email, cidade, estado) VALUES ('Zeca Silva', 'zeca@email.com', 'Teresina', 'PI');
+INSERT 0 1
+loja_aurora=&gt; SELECT id, nome, email FROM clientes WHERE nome = 'Zeca Silva';
+ id |   nome     |      email
+----+------------+------------------
+  6 | Zeca Silva | zeca@email.com
+(1 row)</pre>
+<p>Também dá para inserir sem a lista de colunas — aí a ordem do <code>VALUES</code> tem que ser exatamente a ordem do <code>\d clientes</code>:</p>
+<pre class="file" data-file="insert-sem-colunas.sql">-- ordem: id, nome, email, cidade, estado, criado_em
+INSERT INTO clientes
+VALUES (7, 'Lia Prado', 'lia@email.com', 'Fortaleza', 'CE', '2026-11-24');</pre>
+
+<hr>
+
+<h2>Quando o banco barra: UNIQUE e FOREIGN KEY</h2>
+<p>O <code>INSERT</code> não entra "a qualquer custo" — as restrições da tabela valem na hora:</p>
+<pre class="term" data-title="psql — ana@notebook">loja_aurora=&gt; INSERT INTO clientes (nome, email) VALUES ('Ana Clone', 'ana@email.com');
+ERROR:  duplicate key value violates unique constraint "id_"
+DETAIL:  Key (email)=(ana@email.com) already exists.
+
+loja_aurora=&gt; INSERT INTO pedidos (cliente_id, status) VALUES (99, 'pendente');
+ERROR:  insert or update on table "pedidos" violates foreign key constraint "pedidos_cliente_id_fkey"
+DETAIL:  Key (cliente_id)=(99) is not present in table "clientes".</pre>
+<ul>
+  <li><code>UNIQUE</code> (na coluna <code>email</code>): email repetido → <code>duplicate key value violates unique constraint</code>;</li>
+  <li><code>FOREIGN KEY</code> (na coluna <code>cliente_id</code> de <code>pedidos</code>): não existe cliente com <code>id = 99</code> → <code>violates foreign key constraint</code>. Um pedido precisa de um cliente de verdade.</li>
+</ul>
+
+<hr>
+
+<h2>Pratique</h2>
+<div class="try" data-goal="INSERT 0 1" data-solucao="INSERT INTO clientes (nome, email, cidade, estado) VALUES ('Zeca Silva', 'zeca@email.com', 'Teresina', 'PI');">
+<p class="try-task"><strong>Missão:</strong> arquive o Zeca: <code>INSERT INTO clientes (nome, email, cidade, estado) VALUES ('Zeca Silva', 'zeca@email.com', 'Teresina', 'PI');</code> → <code>INSERT 0 1</code>.</p>
+</div>
+
+<div class="try" data-goal="(1 row)" data-solucao="SELECT nome, email FROM clientes WHERE nome = 'Zeca Silva';">
+<p class="try-task"><strong>Missão:</strong> confira a ficha gravada: <code>SELECT nome, email FROM clientes WHERE nome = 'Zeca Silva';</code> → a saída traz exatamente <code>(1 row)</code>.</p>
+</div>
+
+<div class="try" data-goal="duplicate key" data-solucao="INSERT INTO clientes (nome, email) VALUES ('Ana Clone', 'ana@email.com');">
+<p class="try-task"><strong>Missão:</strong> tente inserir um email que já existe: <code>INSERT INTO clientes (nome, email) VALUES ('Ana Clone', 'ana@email.com');</code> → o banco barra com <code>duplicate key</code>.</p>
+</div>
+
+<div class="try" data-goal="foreign key" data-solucao="INSERT INTO pedidos (cliente_id, status) VALUES (99, 'pendente');">
+<p class="try-task"><strong>Missão:</strong> crie um pedido para um cliente fantasma: <code>INSERT INTO pedidos (cliente_id, status) VALUES (99, 'pendente');</code> → erro de <code>foreign key</code>.</p>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>INSERT INTO t (cols) VALUES (vals);</code> — valores na mesma ordem das colunas; texto entre aspas simples.</li>
+  <li>Sem lista de colunas, vale a ordem do <code>\d t</code> (todas as colunas).</li>
+  <li>Resposta <code>INSERT 0 1</code> = 1 linha inserida; <code>id</code> serial preenche sozinho.</li>
+  <li>Restrições barram na hora: <code>duplicate key ... unique constraint</code> e <code>foreign key constraint</code>.</li>
+  <li>Sempre confira com um <code>SELECT</code> depois de inserir.</li>
+</ul>
+
+<div class="tip"><strong>Próxima aula:</strong> <a href="select-basico.html">SELECT básico: WHERE, ORDER BY e LIMIT</a> — ler as fichas do arquivo: filtrar, ordenar e limitar.</div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js?v=1"></script>
+</body>
+</html>

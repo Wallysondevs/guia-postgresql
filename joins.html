@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JOINs: INNER, LEFT, RIGHT e FULL | Guia PostgreSQL</title>
+<meta name="description" content="JOINs no PostgreSQL: INNER JOIN traz só os pares que existem nas duas tabelas; LEFT, RIGHT e FULL trazem também quem não tem par (com NULL). Aliases (c, p), cláusula ON com a chave estrangeira, JOINs encadeados e erros comuns (coluna ambígua, relation does not exist). Exemplos no psql da ana@notebook no banco loja_aurora cruzando clientes e pedidos, com missões no simulador.">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<script>try{history.scrollRestoration="manual"}catch(e){}function z(){window.scrollTo(0,0);document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0}window.addEventListener("DOMContentLoaded",z);window.addEventListener("load",z);window.addEventListener("pageshow",z);window.addEventListener("pagehide",function(){window.scrollTo(0,0);document.documentElement.scrollTop=0;});document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a){var h=a.getAttribute("href")||"";if(/[.]html($|[?#])/.test(h)&&a.host===location.host){window.scrollTo(0,0);document.documentElement.scrollTop=0;}}});</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1><span class="hl">JOINs</span>: cruzar tabelas pela chave</h1>
+
+<p class="intro">Num banco relacional os dados ficam <strong>espalhados em várias tabelas</strong> — como uma planilha separada para cada assunto — e uma coluna faz a ponte entre elas. O <strong>JOIN</strong> é a cola: ele junta linhas de duas tabelas quando a chave bate. No nosso psql da <code>ana@notebook</code>, no banco <code>loja_aurora</code>, a tabela <code>pedidos</code> guarda <code>cliente_id</code>: é o "CPF" que liga cada pedido ao cliente.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Por que os dados ficam em tabelas separadas (normalização);</li>
+  <li><code>INNER JOIN</code> — só os pares que existem nas duas tabelas;</li>
+  <li><code>LEFT / RIGHT / FULL JOIN</code> — quem não tem par aparece com <code>NULL</code>;</li>
+  <li>Aliases (<code>c</code>, <code>p</code>) e a cláusula <code>ON</code>;</li>
+  <li>Encadear vários JOINs (cliente → pedido → item → produto);</li>
+  <li>Erros comuns: coluna ambígua e tabela que não existe;</li>
+  <li>Praticar no simulador de psql.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>O problema: pedido sem saber quem pediu</h2>
+<p>Olhe as duas "planilhas" do banco <code>loja_aurora</code>:</p>
+<pre class="term">loja_aurora=&gt; SELECT id, nome, estado FROM clientes;
+ id |    nome     | estado
+----+-------------+--------
+  1 | Ana Souza   | PI
+  2 | Beto Lima   | PI
+  3 | Carla Reis  | SP
+  4 | Diego Alves | PE
+  5 | Eva Nike    | PI
+(5 rows)
+
+loja_aurora=&gt; SELECT * FROM pedidos;
+ id | cliente_id |    data    |  status
+----+------------+------------+----------
+  1 |          1 | 2026-11-20 | entregue
+  2 |          2 | 2026-11-22 | enviado
+  3 |          1 | 2026-11-23 | pendente
+(3 rows)</pre>
+<p>Sozinho, o pedido 1 só diz <code>cliente_id = 1</code> — não diz o nome de quem pediu. E a Ana fez <em>dois</em> pedidos. Para responder "quem fez cada pedido e qual o status?", precisamos <strong>juntar</strong> as duas tabelas pela coluna comum: <code>clientes.id = pedidos.cliente_id</code>.</p>
+
+<hr>
+
+<h2>INNER JOIN: só os pares que existem</h2>
+<pre class="term">loja_aurora=&gt; SELECT c.nome, p.status
+             FROM clientes c
+             JOIN pedidos p ON c.id = p.cliente_id;
+   nome    |  status
+-----------+----------
+ Ana Souza | entregue
+ Beto Lima | enviado
+ Ana Souza | pendente
+(3 rows)</pre>
+<p>O <code>INNER JOIN</code> percorre a tabela da esquerda e, para cada linha, procura os pares na direita. <strong>Quem não tem par não aparece</strong>: Carla, Diego e Eva não fecam pedido, então sumiram. Repare nos <strong>apelidos</strong>: <code>clientes c</code> e <code>pedidos p</code> — assim dá para escrever <code>c.nome</code> em vez de <code>clientes.nome</code>.</p>
+<dl class="anatomy">
+  <dt>SELECT c.nome, p.status</dt><dd>as colunas que você quer, sempre com o apelido na frente</dd>
+  <dt>FROM clientes c</dt><dd>a tabela da esquerda, com apelido <code>c</code></dd>
+  <dt>JOIN pedidos p</dt><dd>a tabela da direita, com apelido <code>p</code> (INNER é o padrão — pode escrever só JOIN)</dd>
+  <dt>ON c.id = p.cliente_id</dt><dd>a regra do encontro: a chave primária de <code>clientes</code> casa com a chave estrangeira de <code>pedidos</code></dd>
+</dl>
+
+<hr>
+
+<h2>LEFT JOIN: todos da esquerda, mesmo sem par</h2>
+<p>Se a pergunta é "todos os clientes e seus pedidos (se houver)", use <code>LEFT JOIN</code>:</p>
+<pre class="term">loja_aurora=&gt; SELECT c.nome, p.status
+             FROM clientes c
+             LEFT JOIN pedidos p ON c.id = p.cliente_id;
+    nome     |  status
+-------------+----------
+ Ana Souza   | entregue
+ Ana Souza   | pendente
+ Beto Lima   | enviado
+ Carla Reis  |
+ Diego Alves |
+ Eva Nike    |
+(6 rows)</pre>
+<p>Agora os 5 clientes aparecem — e quem não tem pedido ganha <code>NULL</code> (a célula vazia) nas colunas da tabela da direita. Truque útil: <code>LEFT JOIN ... WHERE p.id IS NULL</code> acha exatamente quem <em>não</em> tem par nenhum.</p>
+
+<hr>
+
+<h2>RIGHT JOIN e FULL JOIN</h2>
+<p>O <code>RIGHT JOIN</code> é o LEFT visto do outro lado (mantém todas as linhas da tabela da <em>direita</em>), e o <code>FULL JOIN</code> mantém as linhas das duas pontas. No nosso banco, como todo pedido tem um cliente válido, o RIGHT sai igual ao INNER — a diferença apareceria se existisse pedido órfão.</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que volta</th><th>Analogia da sala de aula</th></tr>
+<tr><td><code>INNER JOIN</code></td><td>só os pares que existem nas duas tabelas</td><td>alunos que entregaram o trabalho</td></tr>
+<tr><td><code>LEFT JOIN</code></td><td>todas da esquerda + o par (ou NULL)</td><td>a chamada inteira: nome na lista, entregou ou não</td></tr>
+<tr><td><code>RIGHT JOIN</code></td><td>todas da direita + o par (ou NULL)</td><td>o LEFT visto do lado dos trabalhos</td></tr>
+<tr><td><code>FULL JOIN</code></td><td>todas as linhas das duas tabelas</td><td>chamada + trabalhos de aluno que não está na lista</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Juntando três ou mais tabelas</h2>
+<p>Basta ir encadeando JOINs. Aqui ligamos cliente → pedido → item → produto para ver o que cada cliente comprou de verdade:</p>
+<pre class="term">loja_aurora=&gt; SELECT c.nome, pr.nome AS produto, i.qtd
+             FROM clientes c
+             JOIN pedidos p      ON p.cliente_id = c.id
+             JOIN itens_pedido i ON i.pedido_id = p.id
+             JOIN produtos pr    ON pr.id = i.produto_id;
+    nome    |  produto  | qtd
+------------+-----------+-----
+ Ana Souza  | Camiseta  |   2
+ Ana Souza  | Adesivo   |   3
+ Beto Lima  | Caneca    |   1
+ Ana Souza  | Boné      |   1
+(4 rows)</pre>
+
+<hr>
+
+<h2>Erros comuns</h2>
+<div class="warning">
+<strong>Coluna ambígua: esqueceu o apelido</strong>
+<p>Se <code>id</code> existe nas duas tabelas e você escreve <code>SELECT id, ...</code>, o PostgreSQL não adivinha de qual tabela é — e reclama na hora:</p>
+</div>
+<pre class="term">loja_aurora=&gt; SELECT id, status FROM clientes c JOIN pedidos p ON c.id = p.cliente_id;
+ERROR:  column reference "id" is ambiguous
+LINE 1: SELECT id, status FROM clientes c JOIN pedidos p ON c.id = p.cliente_id;
+        ^</pre>
+<p>Solução: prefixe sempre — <code>c.id</code>, <code>p.id</code>. E se a tabela nem existe, o erro é outro:</p>
+<pre class="term">loja_aurora=&gt; SELECT c.nome, p.status FROM clientes c JOIN pedido p ON c.id = p.cliente_id;
+ERROR:  relation "pedido" does not exist
+LINE 1: SELECT c.nome, p.status FROM clientes c JOIN pedido p ON c.id = p.cli...
+                                                           ^</pre>
+
+<hr>
+
+<h2>Missões no simulador</h2>
+<p>Abra o terminal abaixo e tente cada comando:</p>
+
+<div class="try" data-goal="entregue" data-solucao="SELECT c.nome, p.status FROM clientes c JOIN pedidos p ON c.id = p.cliente_id;">
+<p class="try-task"><strong>Missão 1:</strong> liste o nome do cliente e o status de cada pedido com <code>INNER JOIN</code>. A saída mostra <code>entregue</code>.</p>
+</div>
+
+<div class="try" data-goal="(6 rows)" data-solucao="SELECT c.nome, p.status FROM clientes c LEFT JOIN pedidos p ON c.id = p.cliente_id;">
+<p class="try-task"><strong>Missão 2:</strong> troque para <code>LEFT JOIN</code>: todos os clientes, mesmo sem pedido. A saída deve terminar com <code>(6 rows)</code>.</p>
+</div>
+
+<div class="try" data-goal="(1 row)" data-solucao="SELECT c.nome, p.status FROM clientes c JOIN pedidos p ON c.id = p.cliente_id WHERE p.status = 'entregue';">
+<p class="try-task"><strong>Missão 3:</strong> adicione <code>WHERE p.status = 'entregue'</code> ao INNER JOIN — sobra exatamente <code>(1 row)</code>.</p>
+</div>
+
+<div class="try" data-goal="does not exist" data-solucao="SELECT c.nome, p.status FROM clientes c JOIN pedido p ON c.id = p.cliente_id;">
+<p class="try-task"><strong>Missão 4:</strong> escreva <code>pedido</code> (no singular) no lugar de <code>pedidos</code> e veja o erro <code>does not exist</code>.</p>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>JOIN ... ON a.chave = b.chave</code> junta as tabelas onde a chave bate; <code>INNER</code> é o padrão.</li>
+  <li><code>LEFT JOIN</code> mantém todas as linhas da esquerda (NULL onde não há par); <code>RIGHT</code> e <code>FULL</code> completam o conjunto.</li>
+  <li>Use apelidos (<code>c</code>, <code>p</code>) e prefixe colunas ambíguas: <code>c.id</code>.</li>
+  <li>Erros típicos: <code>column reference "id" is ambiguous</code> e <code>relation "x" does not exist</code>.</li>
+</ul>
+
+<div class="tip"><strong>Próxima aula:</strong> <a href="agregacoes.html">COUNT, SUM, AVG, MIN, MAX + GROUP BY + HAVING</a> — em vez de listar linhas, vamos resumi-las: contar, somar e tirar média por grupo.</div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js?v=1"></script>
+</body>
+</html>
